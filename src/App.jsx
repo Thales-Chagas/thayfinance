@@ -35,6 +35,7 @@ import {
   Square,
   Image as ImageIcon,
   Sparkles,
+  ScanFace,
   Printer,
   FileSpreadsheet,
 } from "lucide-react";
@@ -54,6 +55,11 @@ import {
 import logoUrl from "./logo.png";
 import emblemaUrl from "./emblema.png";
 import { supabase } from "./supabaseClient";
+import {
+  temAutenticadorPlataforma,
+  registrarBiometria,
+  verificarBiometria,
+} from "./biometria";
 
 // Dados reais importados das planilhas — o arquivo fica só neste computador,
 // fora do repositório público. Na versão publicada ele não existe e o app
@@ -2014,7 +2020,7 @@ function CampoLogin({ label, ...props }) {
   );
 }
 
-function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci, escuro, onTema }) {
+function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci, onBiometria, temBio, escuro, onTema }) {
   const [nomeInput, setNomeInput] = useState("");
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
@@ -2154,6 +2160,26 @@ function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci, escuro
           </form>
         ) : (
           <form onSubmit={desbloquear} className="space-y-4">
+            {temBio && (
+              <>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setErro("");
+                    const ok = await onBiometria();
+                    if (!ok) setErro("Não reconheci. Você pode entrar com o PIN abaixo.");
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                >
+                  <ScanFace size={18} /> Entrar com Face ID / digital
+                </button>
+                <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                  <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                  ou use o PIN
+                  <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                </div>
+              </>
+            )}
             <CampoLogin
               label="Seu PIN"
               type="password"
@@ -2162,7 +2188,7 @@ function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci, escuro
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
               placeholder="••••"
-              autoFocus
+              autoFocus={!temBio}
             />
             {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
             <button
@@ -2229,6 +2255,7 @@ export default function App() {
     }
   });
   const [arquivoFoto, setArquivoFoto] = useState(null);
+  const [bioDisponivel, setBioDisponivel] = useState(false);
   const dirtyRef = useRef(false);
   const toastTimer = useRef(null);
   const fileRef = useRef(null);
@@ -2252,7 +2279,7 @@ export default function App() {
         const conf = rawLogin ? JSON.parse(rawLogin) : null;
         if (conf && conf.pinHash) {
           setLogin(conf);
-          setAuth(conf.pedirSempre ? "lock" : "open");
+          setAuth(conf.pedirSempre || conf.bioCredId ? "lock" : "open");
         } else {
           setAuth("setup");
         }
@@ -2358,6 +2385,44 @@ export default function App() {
     setAuth("lock");
   }
 
+  // Verifica, ao abrir, se o aparelho tem Face ID / digital
+  useEffect(() => {
+    temAutenticadorPlataforma().then(setBioDisponivel);
+  }, []);
+
+  async function ativarBiometria() {
+    if (!login) return;
+    try {
+      const credId = await registrarBiometria(login.nome);
+      const conf = { ...login, bioCredId: credId };
+      setLogin(conf);
+      await storageSet(LOGIN_KEY, JSON.stringify(conf));
+      showToast("Face ID / digital ativado ✓");
+    } catch {
+      showToast("Não consegui ativar a biometria neste aparelho.", true);
+    }
+  }
+
+  async function desativarBiometria() {
+    if (!login) return;
+    const conf = { ...login };
+    delete conf.bioCredId;
+    setLogin(conf);
+    await storageSet(LOGIN_KEY, JSON.stringify(conf));
+    showToast("Biometria desativada.");
+  }
+
+  async function desbloquearBiometria() {
+    if (!login?.bioCredId) return false;
+    try {
+      await verificarBiometria(login.bioCredId);
+      setAuth("open");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function salvarFoto(dataUrl) {
     if (!login) return;
     const conf = { ...login, foto: dataUrl };
@@ -2436,6 +2501,8 @@ export default function App() {
         onCriar={criarLogin}
         onDesbloquear={desbloquear}
         onEsqueci={esqueciPin}
+        onBiometria={desbloquearBiometria}
+        temBio={!!login?.bioCredId}
         escuro={escuro}
         onTema={() => setEscuro((e) => !e)}
       />
@@ -2519,6 +2586,19 @@ export default function App() {
               <LogOut size={16} />
             </button>
           </div>
+          {bioDisponivel && (
+            <button
+              onClick={login?.bioCredId ? desativarBiometria : ativarBiometria}
+              className={
+                "flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition " +
+                (login?.bioCredId
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                  : "border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800")
+              }
+            >
+              <ScanFace size={16} /> {login?.bioCredId ? "Face ID / digital ativo" : "Ativar Face ID / digital"}
+            </button>
+          )}
           <button
             onClick={exportData}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
