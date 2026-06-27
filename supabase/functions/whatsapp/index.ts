@@ -92,7 +92,7 @@ async function lerComprovante(base64: string, mime: string) {
 Responda APENAS um JSON válido, sem texto antes ou depois, no formato exato:
 {"valor": number, "data": "YYYY-MM-DD", "estabelecimento": string, "categoria": string, "tipo": "despesa"|"receita"}
 Regras:
-- valor é o total pago (número com ponto decimal).
+- VALOR: use o TOTAL DA COMPRA — procure por "VALOR TOTAL", "TOTAL R$", "TOTAL A PAGAR", "VALOR A PAGAR" ou "VALOR COBRADO". NUNCA use o "TROCO" (é o dinheiro que volta) nem o "DINHEIRO"/"VALOR RECEBIDO"/"VALOR PAGO" (é quanto a pessoa entregou, costuma ser maior que o total). Se houver desconto, use o total final já com o desconto aplicado. Número com ponto decimal.
 - DATA: comprovantes brasileiros usam o formato DD/MM/AAAA (DIA primeiro, depois o MÊS). Exemplos: "05/06/2026" = 5 de junho de 2026 → "2026-06-05"; "12/03/2026" = 12 de março → "2026-03-12". Cuidado para NÃO inverter dia e mês. Se não achar a data, use null.
 - categoria é uma palavra simples (ex: Mercado, Farmácia, Transporte, Alimentação). Quase sempre é "despesa".`;
 
