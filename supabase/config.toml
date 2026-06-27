@@ -1,0 +1,12 @@
+project_id = "pgavedcbyrifjolcuhbr"
+
+# O webhook do WhatsApp é chamado pelo Meta, sem login do Supabase.
+# Por isso desligamos a verificação de JWT só nesta função.
+[functions.whatsapp]
+verify_jwt = false
+
+# O "tradutor de IA" é chamado pelo app. Por enquanto sem exigir login
+# (protegido pelo teto de gasto da IA). Quando o login na nuvem entrar,
+# voltamos a exigir JWT aqui.
+[functions.processar]
+verify_jwt = false

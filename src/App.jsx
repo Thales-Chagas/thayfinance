@@ -31,6 +31,10 @@ import {
   Sun,
   LogOut,
   Camera,
+  Mic,
+  Square,
+  Image as ImageIcon,
+  Sparkles,
   Printer,
   FileSpreadsheet,
 } from "lucide-react";
@@ -49,6 +53,7 @@ import {
 } from "recharts";
 import logoUrl from "./logo.png";
 import emblemaUrl from "./emblema.png";
+import { supabase } from "./supabaseClient";
 
 // Dados reais importados das planilhas — o arquivo fica só neste computador,
 // fora do repositório público. Na versão publicada ele não existe e o app
@@ -711,7 +716,7 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onFechar 
 
   return (
     <Modal
-      titulo={(inicial ? "Editar " : "Nova ") + (ehReceita ? "receita" : "despesa")}
+      titulo={(inicial?.id ? "Editar " : "Nova ") + (ehReceita ? "receita" : "despesa")}
       onFechar={onFechar}
     >
       <form onSubmit={salvar} className="space-y-3">
@@ -818,15 +823,181 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onFechar 
 }
 
 /* ============================================================
+   CAPTURA POR IA (áudio + foto de comprovante)
+   ============================================================ */
+
+// Comprime e redimensiona a imagem antes de enviar/guardar (economia de espaço)
+function comprimirImagem(file, maxLado = 1280, q = 0.72) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const escala = Math.min(1, maxLado / Math.max(width, height));
+        width = Math.round(width * escala);
+        height = Math.round(height * escala);
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", q);
+        resolve({ dataUrl, base64: dataUrl.split(",")[1] });
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function blobParaBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Dois botões: 🎙️ Áudio e 📷 Comprovante. Chamam a IA e devolvem o
+// lançamento pronto (via onResultado) pra pessoa conferir e salvar.
+function CapturaIA({ onResultado, showToast }) {
+  const [estado, setEstado] = useState("idle"); // idle | gravando | processando
+  const fotoRef = useRef(null);
+  const recRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+
+  async function chamarIA(payload, extra = {}) {
+    setEstado("processando");
+    try {
+      const { data, error } = await supabase.functions.invoke("processar", { body: payload });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.erro || "falhou");
+      onResultado({ ...data, ...extra });
+    } catch {
+      showToast("A IA não conseguiu ler. Pode tentar de novo?", true);
+    } finally {
+      setEstado("idle");
+    }
+  }
+
+  async function aoEscolherFoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      setEstado("processando");
+      const { dataUrl, base64 } = await comprimirImagem(file);
+      await chamarIA({ kind: "foto", base64, mime: "image/jpeg" }, { comprovante: dataUrl });
+    } catch {
+      setEstado("idle");
+      showToast("Não consegui abrir essa imagem.", true);
+    }
+  }
+
+  async function gravarAudio() {
+    if (estado === "processando") return;
+    if (estado === "gravando") {
+      recRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (ev) => ev.data.size > 0 && chunksRef.current.push(ev.data);
+      rec.onstop = async () => {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        const base64 = await blobParaBase64(blob);
+        await chamarIA({ kind: "audio", base64, mime: rec.mimeType || "audio/webm" });
+      };
+      recRef.current = rec;
+      rec.start();
+      setEstado("gravando");
+    } catch {
+      showToast("Não consegui acessar o microfone. Permita o acesso e tente de novo.", true);
+    }
+  }
+
+  const ocupado = estado === "processando";
+
+  return (
+    <>
+      <input
+        ref={fotoRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={aoEscolherFoto}
+      />
+      {ocupado ? (
+        <span className="flex items-center gap-1.5 rounded-lg border border-emerald-200 px-2.5 py-1.5 text-xs font-medium text-emerald-600 dark:border-emerald-800 dark:text-emerald-400">
+          <Loader2 size={14} className="animate-spin" /> lendo com IA…
+        </span>
+      ) : (
+        <>
+          <BotaoLeve
+            onClick={gravarAudio}
+            title="Lançar por áudio"
+            className={estado === "gravando" ? "!border-red-300 !bg-red-50 !text-red-600 dark:!bg-red-950" : ""}
+          >
+            {estado === "gravando" ? <><Square size={14} /> Parar</> : <><Mic size={14} /> Áudio</>}
+          </BotaoLeve>
+          <BotaoLeve onClick={() => fotoRef.current?.click()} title="Ler comprovante">
+            <Camera size={14} /> Comprovante
+          </BotaoLeve>
+        </>
+      )}
+    </>
+  );
+}
+
+/* ============================================================
    LISTA DE LANÇAMENTOS (Receitas / Despesas)
    ============================================================ */
 
-function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, tituloPagina }) {
+function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, showToast }) {
   const [form, setForm] = useState(null); // null | {} novo | transacao p/ editar
+  const [verComprovante, setVerComprovante] = useState(null); // dataURL p/ visualizar
   const prefixo = mesPrefixo(ano, mesIdx);
   const lista = espaco.transacoes
     .filter((t) => t.tipo === tipo && t.data.startsWith(prefixo))
     .sort((a, b) => b.data.localeCompare(a.data));
+
+  // Recebe o resultado da IA e abre o formulário já preenchido p/ conferir
+  function abrirRevisao(ai) {
+    const ENTRADAS = ["Faturamento", "Salário"];
+    const ehRec = ai.tipo === "receita";
+    const alvo = (ai.categoria || "").trim().toLowerCase();
+    const cat =
+      espaco.categorias.find((c) => c.nome.toLowerCase() === alvo) ||
+      (alvo &&
+        espaco.categorias.find(
+          (c) => c.nome.toLowerCase().includes(alvo) || alvo.includes(c.nome.toLowerCase())
+        )) ||
+      (ehRec
+        ? espaco.categorias.find((c) => ENTRADAS.includes(c.nome))
+        : espaco.categorias.find((c) => !ENTRADAS.includes(c.nome))) ||
+      espaco.categorias[0];
+    setForm({
+      tipo: ehRec ? "receita" : "despesa",
+      data: ai.data || hojeISO(),
+      categoriaId: cat?.id || "",
+      valor: Number(ai.valor) || 0,
+      descricao: ai.descricao || ai.estabelecimento || "",
+      status: "ok",
+      clienteId: "",
+      fornecedorId: "",
+      centroCustoId: "",
+      comprovante: ai.comprovante || null,
+    });
+  }
   const catNome = (id) => espaco.categorias.find((c) => c.id === id)?.nome || "—";
   const totalOk = soma(lista.filter((t) => t.status === "ok"));
   const totalPend = soma(lista.filter((t) => t.status === "pendente"));
@@ -845,9 +1016,12 @@ function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, titul
             </span>
           )}
         </div>
-        <BotaoPrimario onClick={() => setForm({})}>
-          <Plus size={16} /> {ehReceita ? (empresarial ? "Novo faturamento" : "Nova receita") : "Nova despesa"}
-        </BotaoPrimario>
+        <div className="flex flex-wrap items-center gap-2">
+          <CapturaIA onResultado={abrirRevisao} showToast={showToast} />
+          <BotaoPrimario onClick={() => setForm({})}>
+            <Plus size={16} /> {ehReceita ? (empresarial ? "Novo faturamento" : "Nova receita") : "Nova despesa"}
+          </BotaoPrimario>
+        </div>
       </div>
 
       <Card>
@@ -877,6 +1051,15 @@ function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, titul
                   {fmtBRL(t.valor)}
                 </span>
                 <div className="flex gap-0.5">
+                  {t.comprovante && (
+                    <button
+                      onClick={() => setVerComprovante(t.comprovante)}
+                      className="rounded-lg p-1.5 text-emerald-500 transition hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                      aria-label="Ver comprovante"
+                    >
+                      <ImageIcon size={15} />
+                    </button>
+                  )}
                   <button
                     onClick={() => setForm(t)}
                     className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
@@ -903,12 +1086,18 @@ function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, titul
       {form !== null && (
         <FormTransacao
           tipo={tipo}
-          inicial={form.id ? form : null}
+          inicial={form && Object.keys(form).length ? form : null}
           espaco={espaco}
           empresarial={empresarial}
           onSalvar={acoes.salvar}
           onFechar={() => setForm(null)}
         />
+      )}
+
+      {verComprovante && (
+        <Modal titulo="Comprovante" onFechar={() => setVerComprovante(null)}>
+          <img src={verComprovante} alt="Comprovante" className="w-full rounded-xl" />
+        </Modal>
       )}
     </div>
   );
@@ -2467,10 +2656,10 @@ export default function App() {
                 <PaginaDashboard espaco={espaco} ano={ano} mesIdx={mesIdx} escuro={escuro} irPara={setView} />
               )}
               {view === "receitas" && (
-                <PaginaTransacoes tipo="receita" espaco={espaco} empresarial={empresarial} ano={ano} mesIdx={mesIdx} acoes={acoesTransacao} />
+                <PaginaTransacoes tipo="receita" espaco={espaco} empresarial={empresarial} ano={ano} mesIdx={mesIdx} acoes={acoesTransacao} showToast={showToast} />
               )}
               {view === "despesas" && (
-                <PaginaTransacoes tipo="despesa" espaco={espaco} empresarial={empresarial} ano={ano} mesIdx={mesIdx} acoes={acoesTransacao} />
+                <PaginaTransacoes tipo="despesa" espaco={espaco} empresarial={empresarial} ano={ano} mesIdx={mesIdx} acoes={acoesTransacao} showToast={showToast} />
               )}
               {view === "contas" && <PaginaContas espaco={espaco} acoes={acoesTransacao} />}
               {view === "fluxo" && <PaginaFluxo espaco={espaco} />}

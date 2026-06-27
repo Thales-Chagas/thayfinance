@@ -5,5 +5,8 @@ dev-dist
 # Dados financeiros reais â€” nunca publicar
 src/dadosPlanilha.json
 
-# Configuração local do Claude Code
+# Arquivos temporÃ¡rios do Supabase CLI (estado local)
+supabase/.temp/
+
+# Configuraï¿½ï¿½o local do Claude Code
 .claude/
