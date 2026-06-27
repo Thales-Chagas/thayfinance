@@ -42,10 +42,13 @@ function base64ParaBytes(b64: string): Uint8Array {
 
 // ---- Claude lê a imagem do comprovante ----
 async function lerComprovante(base64: string, mime: string) {
-  const prompt = `Você é um assistente financeiro. Analise este comprovante (cupom, nota, recibo ou Pix) e extraia os dados.
+  const prompt = `Você é um assistente financeiro brasileiro. Analise este comprovante (cupom, nota, recibo ou Pix) e extraia os dados.
 Responda APENAS um JSON válido, sem texto antes ou depois:
 {"valor": number, "data": "YYYY-MM-DD", "estabelecimento": string, "categoria": string, "tipo": "despesa"|"receita"}
-Regras: valor é o total pago (número com ponto decimal). Se não achar a data, use null. categoria simples (ex: Mercado, Farmácia, Transporte). Quase sempre "despesa".`;
+Regras:
+- valor é o total pago (número com ponto decimal).
+- DATA: comprovantes brasileiros usam o formato DD/MM/AAAA (DIA primeiro, depois o MÊS). Exemplos: "05/06/2026" = 5 de junho de 2026 → "2026-06-05"; "12/03/2026" = 12 de março → "2026-03-12". Cuidado para NÃO inverter dia e mês. Se não achar a data, use null.
+- categoria simples (ex: Mercado, Farmácia, Transporte). Quase sempre "despesa".`;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
