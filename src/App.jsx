@@ -2704,6 +2704,21 @@ export default function App() {
                   </>
                 )}
               </span>
+              {bioDisponivel && (
+                <button
+                  onClick={login?.bioCredId ? desativarBiometria : ativarBiometria}
+                  className={
+                    "rounded-lg p-1.5 transition md:hidden " +
+                    (login?.bioCredId
+                      ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                      : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300")
+                  }
+                  aria-label={login?.bioCredId ? "Desativar Face ID" : "Ativar Face ID / digital"}
+                  title={login?.bioCredId ? "Face ID / digital ativo" : "Ativar Face ID / digital"}
+                >
+                  <ScanFace size={18} />
+                </button>
+              )}
               <button onClick={exportData} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 md:hidden" aria-label="Exportar dados">
                 <Download size={18} />
               </button>
