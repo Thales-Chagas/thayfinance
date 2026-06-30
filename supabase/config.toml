@@ -10,3 +10,8 @@ verify_jwt = false
 # voltamos a exigir JWT aqui.
 [functions.processar]
 verify_jwt = false
+
+# Webhook do bot do Telegram (chamado pelo Telegram, sem login Supabase).
+# A própria função valida o header secret do Telegram.
+[functions.telegram]
+verify_jwt = false
