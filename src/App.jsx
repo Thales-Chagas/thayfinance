@@ -3001,17 +3001,33 @@ export default function App() {
   function importData(file) {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const parsed = JSON.parse(reader.result);
         const dados = normalizarDados(parsed);
         if (!dados) throw new Error("estrutura inválida");
-        if (!window.confirm("Importar este backup? Os dados atuais deste aparelho serão substituídos pelos do arquivo.")) return;
-        dirtyRef.current = true;
-        setData(dados);
-        showToast("Backup importado ✓");
-      } catch {
-        showToast("Arquivo inválido. Use um backup exportado pelo próprio app.", true);
+
+        if (modoNuvemRef.current && userId) {
+          // Logado na nuvem: SOMA o backup à conta com dedupe (categorias
+          // iguais por nome não duplicam), em vez de substituir o aparelho.
+          if (!window.confirm("Enviar este backup para a sua conta na nuvem?\n\nEle será somado ao que já existe — categorias com o mesmo nome não duplicam, e nada é apagado.")) return;
+          setStatus("saving");
+          const res = await migrarLocalParaNuvem(userId, dados, data);
+          const merge = await carregarTudo();
+          dirtyRef.current = false; // o setData abaixo não deve disparar nova gravação
+          setData(merge);
+          ultimoSyncRef.current = merge;
+          setStatus("saved");
+          showToast(`${res.transacoes} lançamentos enviados para a nuvem ✓`);
+        } else {
+          if (!window.confirm("Importar este backup? Os dados atuais deste aparelho serão substituídos pelos do arquivo.")) return;
+          dirtyRef.current = true;
+          setData(dados);
+          showToast("Backup importado ✓");
+        }
+      } catch (e) {
+        console.error("falha ao importar backup:", e);
+        showToast("Não consegui importar. Use um backup exportado pelo próprio app.", true);
       }
     };
     reader.onerror = () => showToast("Não foi possível ler o arquivo.", true);
