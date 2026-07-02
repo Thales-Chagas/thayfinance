@@ -41,12 +41,107 @@ function dentroDoLimite(chatId: number): boolean {
 }
 
 // ------------------------------------------------------------
-async function responder(chatId: number, texto: string) {
+async function responder(chatId: number, texto: string, html = false) {
   await fetch(`${API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: texto }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: texto,
+      ...(html ? { parse_mode: "HTML" } : {}),
+    }),
   });
+}
+
+// escapa texto do usuário/IA para não quebrar o HTML do Telegram
+function escHtml(s: string | null): string {
+  return (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// 2026-07-01 -> 01/07/2026
+function dataBR(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
+// emoji que combina com a categoria do lançamento
+function emojiCategoria(nome: string | null): string {
+  const n = (nome || "").toLowerCase();
+  const tem = (...ks: string[]) => ks.some((k) => n.includes(k));
+  if (tem("combust", "gasolina", "posto", "etanol", "diesel")) return "⛽";
+  if (tem("mercado", "supermerc", "feira", "hortifr", "açougue", "acougue")) return "🛒";
+  if (tem("farm", "remedio", "remédio", "saude", "saúde", "hospital", "medic", "consulta", "exame")) return "💊";
+  if (tem("transp", "uber", "onibus", "ônibus", "99", "taxi", "táxi", "metro", "metrô", "passagem", "pedágio", "pedagio", "estaciona")) return "🚗";
+  if (tem("restaur", "lanche", "aliment", "comida", "ifood", "padaria", "cafe", "café", "pizza", "bar")) return "🍽️";
+  if (tem("alug", "moradia", "condom", "casa", "imóvel", "imovel")) return "🏠";
+  if (tem("agua", "água", "luz", "energia", "gas ", "gás", "conta")) return "💡";
+  if (tem("telefone", "celular", "internet", "wifi", "wi-fi", "tim", "vivo", "claro")) return "📱";
+  if (tem("salario", "salário", "renda", "pagamento", "receb", "venda")) return "💵";
+  if (tem("lazer", "cinema", "viagem", "passeio", "festa", "show")) return "🎉";
+  if (tem("educ", "escola", "curso", "faculdade", "livro", "mensalidade")) return "📚";
+  if (tem("roupa", "vestu", "calçad", "calcad", "sapato", "moda")) return "👕";
+  if (tem("pet", "animal", "veterin", "ração", "racao")) return "🐾";
+  if (tem("beleza", "salao", "salão", "cabelo", "estetica", "estética", "unha", "manicure")) return "💅";
+  return "🏷️";
+}
+
+// monta a mensagem de confirmação bonita (HTML do Telegram)
+// Decide se o lançamento é da EMPRESA. PADRÃO = pessoal; só vira
+// empresarial quando a mensagem cita termos claramente empresariais.
+function detectarModo(texto: string | null | undefined): "pessoal" | "empresarial" {
+  const t = (texto || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, ""); // remove acentos
+  const termos =
+    /\b(empresa|empresas|empresarial|empresariais|da empresa|pra empresa|para empresa|firma|cnpj|negocio|negocios|comercial|corporativ[oa]|pj|pessoa juridica)\b/;
+  return termos.test(t) ? "empresarial" : "pessoal";
+}
+
+// Escolhe 👩/👨 pelo primeiro nome (heurística PT-BR: termina em "a" = feminino,
+// com algumas exceções conhecidas). Neutro 🧑 quando não dá pra saber.
+function emojiPessoa(nome: string | null | undefined): string {
+  const prim = (nome || "")
+    .trim().split(/\s+/)[0].toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (!prim) return "🧑";
+  const feminino = ["beatriz", "raquel", "ester", "esther", "isis", "carmen", "ines", "mirian", "miriam", "abigail", "rute", "noemi", "dulce", "ruth", "esther", "heloa"];
+  const masculino = ["luca", "caua", "noa", "josua", "dara"]; // terminam em "a" mas são masculinos
+  if (feminino.includes(prim)) return "👩";
+  if (masculino.includes(prim)) return "👨";
+  return prim.endsWith("a") ? "👩" : "👨";
+}
+
+function montarResposta(dados: any, modo: "pessoal" | "empresarial", nome?: string | null): string {
+  const linha = "━━━━━━━━━━━━━━━━";
+  const local = dados.estabelecimento || dados.descricao;
+  const rotuloLocal = dados.estabelecimento ? "📍 <b>Local</b>" : "📝 <b>Descrição</b>";
+  const badgeModo = modo === "empresarial"
+    ? "🏢 <i>Conta Empresarial</i>"
+    : `${emojiPessoa(nome)} <i>Conta Pessoal</i>`;
+  const p: string[] = [
+    "✅ <b>Lançamento salvo com sucesso!</b>",
+    badgeModo,
+    "",
+    linha,
+    "",
+    "💰 <b>Valor</b>",
+    fmtBR(dados.valor),
+    "",
+    `${emojiCategoria(dados.categoria)} <b>Categoria</b>`,
+    escHtml(dados.categoria || "—"),
+  ];
+  if (local) p.push("", rotuloLocal, escHtml(local));
+  p.push(
+    "",
+    "📅 <b>Data</b>",
+    dataBR(dados.data),
+    "",
+    linha,
+    "",
+    "💚 <i>ThayFinance · Controle Financeiro</i>",
+  );
+  return p.join("\n");
 }
 
 async function baixarArquivo(fileId: string): Promise<{ bytes: Uint8Array; mime: string }> {
@@ -161,22 +256,22 @@ Regras: interprete "ontem"/"hoje"/"anteontem" em relação a ${hoje}. valor com 
   return parseJsonSeguro(out?.content?.[0]?.text ?? "{}");
 }
 
-async function acharCategoria(userId: string, nome: string | null): Promise<string | null> {
+async function acharCategoria(userId: string, modo: string, nome: string | null): Promise<string | null> {
   if (!nome) return null;
   const { data: existe } = await db.from("categorias")
-    .select("id").eq("user_id", userId).eq("modo", "pessoal").ilike("nome", nome).maybeSingle();
+    .select("id").eq("user_id", userId).eq("modo", modo).ilike("nome", nome).maybeSingle();
   if (existe) return existe.id;
   const { data: nova } = await db.from("categorias")
-    .insert({ user_id: userId, modo: "pessoal", nome }).select("id").single();
+    .insert({ user_id: userId, modo, nome }).select("id").single();
   return nova?.id ?? null;
 }
 
 const fmtBR = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-async function gravarTransacao(userId: string, dados: any) {
-  const catId = await acharCategoria(userId, dados.categoria);
+async function gravarTransacao(userId: string, modo: string, dados: any) {
+  const catId = await acharCategoria(userId, modo, dados.categoria);
   const { data: tx } = await db.from("transacoes").insert({
-    user_id: userId, modo: "pessoal", tipo: dados.tipo, status: "ok",
+    user_id: userId, modo, tipo: dados.tipo, status: "ok",
     data: dados.data, valor: dados.valor,
     descricao: dados.descricao || dados.estabelecimento || null,
     origem: "telegram", categoria_id: catId,
@@ -186,17 +281,6 @@ async function gravarTransacao(userId: string, dados: any) {
 
 // ============================================================
 Deno.serve(async (req) => {
-  // Atalho de setup (temporário): registra o webhook usando os segredos
-  if (req.method === "GET" && new URL(req.url).searchParams.get("action") === "setwebhook") {
-    const url = `${SUPABASE_URL}/functions/v1/telegram`;
-    const r = await fetch(`${API}/setWebhook`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, secret_token: WEBHOOK_SECRET, allowed_updates: ["message"] }),
-    });
-    return new Response(await r.text(), { status: 200, headers: { "content-type": "application/json" } });
-  }
-
   // 1) só aceita POST com o secret correto do webhook
   if (req.method !== "POST") return new Response("ok", { status: 200 });
   if (req.headers.get("X-Telegram-Bot-Api-Secret-Token") !== WEBHOOK_SECRET) {
@@ -215,12 +299,13 @@ Deno.serve(async (req) => {
 
       // 2) allowlist — chat_id precisa estar cadastrado
       const { data: link } = await db.from("telegram_links")
-        .select("user_id").eq("chat_id", chatId).maybeSingle();
+        .select("user_id, nome").eq("chat_id", chatId).maybeSingle();
       if (!link) {
         console.log(`chat_id nao autorizado: ${chatId} (ignorado)`);
         return; // silêncio: não confirma que o bot existe
       }
       const userId = link.user_id;
+      const nome = link.nome as string | null;
 
       // 3) rate limit
       if (!dentroDoLimite(chatId)) {
@@ -240,8 +325,10 @@ Deno.serve(async (req) => {
         if (!frase) { await responder(chatId, "Não entendi o áudio. Pode repetir? 🎙️"); return; }
         const dados = validarLancamento(await fraseParaLancamento(frase));
         if (!dados) { await responder(chatId, `Entendi: "${frase}", mas não achei um valor válido. Tente: "gastei 50 no mercado". 🙂`); return; }
-        await gravarTransacao(userId, dados);
-        await responder(chatId, `✅ Lançado por áudio!\n\n💸 ${fmtBR(dados.valor)}\n🏷️ ${dados.categoria || "—"}\n📝 ${dados.descricao || frase}\n📅 ${dados.data}`);
+        if (!dados.descricao) dados.descricao = frase;
+        const modo = detectarModo(frase);
+        await gravarTransacao(userId, modo, dados);
+        await responder(chatId, montarResposta(dados, modo, nome), true);
         return;
       }
 
@@ -254,31 +341,59 @@ Deno.serve(async (req) => {
         await db.storage.from("comprovantes").upload(caminho, bytes, { contentType: mime, upsert: false });
         const dados = validarLancamento(await lerComprovante(bytesParaBase64(bytes), mime));
         if (!dados) { await responder(chatId, "Não consegui ler o valor desse comprovante. 📷 Pode mandar de novo, mais nítido?"); return; }
-        const txId = await gravarTransacao(userId, dados);
+        // legenda da foto decide empresa/pessoal (ex.: escrever "empresa" ao enviar)
+        const modo = detectarModo(msg.caption);
+        const txId = await gravarTransacao(userId, modo, dados);
         await db.from("comprovantes").insert({
           user_id: userId, transacao_id: txId, storage_path: caminho, mime_type: mime,
           tamanho_bytes: bytes.length, origem: "telegram", ocr_status: "concluido",
           ocr_bruto: dados, extraido_valor: dados.valor, extraido_data: dados.data,
           extraido_estabelecimento: dados.estabelecimento, extraido_categoria: dados.categoria,
         });
-        await responder(chatId, `✅ Comprovante lançado!\n\n💸 ${fmtBR(dados.valor)}\n🏷️ ${dados.categoria || "—"}\n🏪 ${dados.estabelecimento || "—"}\n📅 ${dados.data}\n\nA foto ficou guardada na sua conta.`);
+        await responder(chatId, montarResposta(dados, modo, nome) + "\n\n🧾 <i>A foto ficou guardada na sua conta.</i>", true);
         return;
       }
 
       // ---- TEXTO ----
       if (typeof msg.text === "string" && msg.text.trim()) {
-        if (msg.text.trim().toLowerCase() === "/start") {
-          await responder(chatId, "Oi! 👋 Sou o assistente do Thayfinance. Me mande um *áudio*, uma *foto de comprovante* ou *escreva* o gasto (ex: \"gastei 50 no mercado\") que eu lanço pra você.");
+        if (["/start", "/ajuda", "/help"].includes(msg.text.trim().toLowerCase())) {
+          await responder(
+            chatId,
+            [
+              "👋 <b>Oi! Eu sou o assistente do ThayFinance.</b>",
+              "",
+              "Me mande de 3 jeitos:",
+              "🎙️ um <b>áudio</b> falando o gasto",
+              "📷 uma <b>foto do comprovante</b>",
+              "✍️ ou <b>escreva</b> (ex: \"gastei 50 no mercado\")",
+              "",
+              "━━━━━━━━━━━━━━━━",
+              "👤 <b>Pessoal x 🏢 Empresarial</b>",
+              "",
+              "Por padrão eu lanço tudo na sua conta <b>Pessoal</b>.",
+              "Pra jogar na <b>Empresarial</b>, é só citar a <b>empresa</b> na mensagem. Exemplos:",
+              "• <i>\"paguei 200 de energia da empresa\"</i>",
+              "• <i>\"recebi 500, faturamento empresarial\"</i>",
+              "• numa <b>foto</b>, escreva <b>empresa</b> na legenda ao enviar",
+              "",
+              "Palavras que mando pra Empresarial: <i>empresa, empresarial, firma, CNPJ, negócio, comercial</i>.",
+              "",
+              "💚 Bora começar!",
+            ].join("\n"),
+            true,
+          );
           return;
         }
         const dados = validarLancamento(await fraseParaLancamento(msg.text));
         if (!dados) { await responder(chatId, "Não achei um valor nessa mensagem. Tente algo como: \"gastei 50 no mercado ontem\". 🙂"); return; }
-        await gravarTransacao(userId, dados);
-        await responder(chatId, `✅ Lançado!\n\n💸 ${fmtBR(dados.valor)}\n🏷️ ${dados.categoria || "—"}\n📝 ${dados.descricao || msg.text}\n📅 ${dados.data}`);
+        if (!dados.descricao) dados.descricao = msg.text;
+        const modo = detectarModo(msg.text);
+        await gravarTransacao(userId, modo, dados);
+        await responder(chatId, montarResposta(dados, modo, nome), true);
         return;
       }
 
-      await responder(chatId, "Me mande um *áudio*, uma *foto de comprovante* ou *escreva* o gasto que eu lanço. 😊");
+      await responder(chatId, "😊 Me mande um <b>áudio</b>, uma <b>foto de comprovante</b> ou <b>escreva</b> o gasto que eu lanço pra você.", true);
     } catch (e) {
       console.error("erro ao processar:", e);
     }

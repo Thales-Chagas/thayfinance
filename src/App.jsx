@@ -38,6 +38,12 @@ import {
   ScanFace,
   Printer,
   FileSpreadsheet,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  ArrowRight,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -54,7 +60,19 @@ import {
 } from "recharts";
 import logoUrl from "./logo.png";
 import emblemaUrl from "./emblema.png";
+import bgLoginUrl from "./bg-login.jpg";
 import { supabase } from "./supabaseClient";
+import {
+  cadastrar as cadastrarNuvem,
+  entrar as entrarNuvem,
+  reenviarConfirmacao,
+  redefinirSenha,
+  atualizarSenha,
+  sairNuvem,
+  sessaoAtual,
+  aoMudarAuth,
+} from "./cloudAuth";
+import { carregarTudo, sincronizar, migrarLocalParaNuvem } from "./cloudData";
 import {
   temAutenticadorPlataforma,
   registrarBiometria,
@@ -74,6 +92,39 @@ const SEED = seedFiles["./dadosPlanilha.json"]?.default ?? { months: {} };
 const STORAGE_KEY = "financas_app_data";
 const LOGIN_KEY = "financas_app_login";
 const TEMA_KEY = "financas_app_tema";
+const MIGR_KEY = "financas_app_migrado_"; // + userId: marca que já perguntamos da migração
+
+// Captura, JÁ na abertura, se o app foi aberto por um link de "Esqueci a senha".
+// Roda no import (antes do supabase-js processar e limpar o hash da URL), então
+// é confiável para desviar o fluxo para a tela de nova senha em vez de "open".
+const URL_RECUPERACAO =
+  typeof window !== "undefined" && /[#&?]type=recovery/.test(window.location.hash || "");
+
+// Janela de desbloqueio: por 1h após desbloquear, recarregar não pede PIN/biometria.
+const DESBLOQUEIO_KEY = "financas_app_desbloqueio";
+const GRACA_MS = 60 * 60 * 1000; // 1 hora
+function marcarDesbloqueio() {
+  try {
+    localStorage.setItem(DESBLOQUEIO_KEY, String(Date.now()));
+  } catch {
+    /* sem armazenamento */
+  }
+}
+function limparDesbloqueio() {
+  try {
+    localStorage.removeItem(DESBLOQUEIO_KEY);
+  } catch {
+    /* sem armazenamento */
+  }
+}
+function desbloqueioRecente() {
+  try {
+    const t = Number(localStorage.getItem(DESBLOQUEIO_KEY) || 0);
+    return t > 0 && Date.now() - t < GRACA_MS;
+  } catch {
+    return false;
+  }
+}
 
 const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -688,7 +739,7 @@ function ChipStatus({ status, tipo }) {
    FORMULÁRIOS
    ============================================================ */
 
-function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onFechar }) {
+function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onCriarCategoria, onFechar }) {
   const ENTRADAS = ["Faturamento", "Salário"];
   const catPadrao =
     tipo === "receita"
@@ -710,6 +761,21 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onFechar 
   const [erro, setErro] = useState("");
   const ehReceita = (inicial ? inicial.tipo : tipo) === "receita";
   const set = (k, v) => setT((p) => ({ ...p, [k]: v }));
+
+  // Criação de categoria na hora, sem sair do lançamento.
+  const [criandoCat, setCriandoCat] = useState(false);
+  const [novaCat, setNovaCat] = useState("");
+  function confirmarNovaCat() {
+    const nome = novaCat.trim();
+    if (!nome) {
+      setCriandoCat(false);
+      return;
+    }
+    const cat = onCriarCategoria?.(nome); // salva no login+tipo atuais
+    if (cat?.id) set("categoriaId", cat.id); // já seleciona a nova
+    setNovaCat("");
+    setCriandoCat(false);
+  }
 
   function salvar(e) {
     e.preventDefault();
@@ -740,17 +806,69 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onFechar 
           </Campo>
         </div>
         <Campo label="Categoria">
-          <select
-            value={t.categoriaId}
-            onChange={(e) => set("categoriaId", e.target.value)}
-            className={inputCls}
-          >
-            {espaco.categorias.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
+          {criandoCat ? (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={novaCat}
+                onChange={(e) => setNovaCat(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    confirmarNovaCat();
+                  } else if (e.key === "Escape") {
+                    setNovaCat("");
+                    setCriandoCat(false);
+                  }
+                }}
+                placeholder="Nome da nova categoria"
+                className={inputCls + " flex-1"}
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={confirmarNovaCat}
+                className="rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700"
+              >
+                Salvar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNovaCat("");
+                  setCriandoCat(false);
+                }}
+                className="rounded-xl border border-slate-200 px-3 text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <select
+                value={t.categoriaId}
+                onChange={(e) => set("categoriaId", e.target.value)}
+                className={inputCls + " flex-1"}
+              >
+                {espaco.categorias.length === 0 && <option value="">— nenhuma ainda —</option>}
+                {espaco.categorias.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+              {onCriarCategoria && (
+                <button
+                  type="button"
+                  onClick={() => setCriandoCat(true)}
+                  className="flex items-center gap-1 rounded-xl border border-emerald-200 px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950"
+                  aria-label="Criar nova categoria"
+                >
+                  <Plus size={16} /> Nova
+                </button>
+              )}
+            </div>
+          )}
         </Campo>
         <Campo label="Descrição">
           <input
@@ -1096,6 +1214,7 @@ function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, showT
           espaco={espaco}
           empresarial={empresarial}
           onSalvar={acoes.salvar}
+          onCriarCategoria={acoes.criarCategoria}
           onFechar={() => setForm(null)}
         />
       )}
@@ -2020,6 +2139,314 @@ function CampoLogin({ label, ...props }) {
   );
 }
 
+// Campo de formulário da TelaAuth: rótulo + ícone à esquerda e, se for
+// senha, um "olho" à direita para mostrar/ocultar.
+function CampoAuth({ label, icon: Icon, type = "text", value, onChange, placeholder, senha }) {
+  const [ver, setVer] = useState(false);
+  const tipo = senha ? (ver ? "text" : "password") : type;
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-medium text-emerald-300/90">{label}</label>
+      <div className="relative">
+        <Icon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400/70" />
+        <input
+          type={tipo}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          className="w-full rounded-xl border border-white/10 bg-slate-950/40 py-2.5 pl-10 pr-10 text-sm text-slate-100 placeholder-slate-500 outline-none transition focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-500/20"
+        />
+        {senha && (
+          <button
+            type="button"
+            onClick={() => setVer((v) => !v)}
+            aria-label={ver ? "Ocultar senha" : "Mostrar senha"}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-emerald-300"
+          >
+            {ver ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Tela de acesso à NUVEM (Supabase Auth): entrar ou criar conta por
+// e-mail + senha. É o portão externo; depois vem a tranca rápida (PIN/bio).
+function TelaAuth() {
+  const [aba, setAba] = useState("entrar"); // entrar | criar
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [nome, setNome] = useState("");
+  const [erro, setErro] = useState("");
+  const [info, setInfo] = useState("");
+  const [carregando, setCarregando] = useState(false);
+  const [confirmar, setConfirmar] = useState(false); // mostrou "confirme seu e-mail"
+
+  function limpar() {
+    setErro("");
+    setInfo("");
+  }
+
+  async function fazerEntrar(e) {
+    e.preventDefault();
+    limpar();
+    if (!email.trim() || !senha) return setErro("Preencha e-mail e senha.");
+    setCarregando(true);
+    try {
+      await entrarNuvem(email, senha);
+      // o App observa a mudança de sessão (aoMudarAuth) e segue sozinho
+    } catch (err) {
+      const m = String(err?.message || "");
+      // Mensagem única p/ credencial errada E e-mail não confirmado: não
+      // revela se aquele e-mail já tem conta (evita enumeração). Ainda ajuda
+      // a usuária citando a confirmação como possibilidade, sem afirmá-la.
+      if (/not confirmed|invalid login|invalid credential/i.test(m))
+        setErro("E-mail ou senha incorretos. Se você acabou de criar a conta, confirme o e-mail pelo link que enviamos.");
+      else setErro("Não consegui entrar agora. Tente de novo em instantes.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function fazerCriar(e) {
+    e.preventDefault();
+    limpar();
+    if (!nome.trim()) return setErro("Digite como você quer ser chamada.");
+    if (!email.trim()) return setErro("Digite seu e-mail.");
+    if (senha.length < 8) return setErro("A senha precisa ter pelo menos 8 caracteres.");
+    setCarregando(true);
+    try {
+      const { precisaConfirmar } = await cadastrarNuvem(email, senha, nome);
+      if (precisaConfirmar) setConfirmar(true);
+    } catch (err) {
+      const m = String(err?.message || "");
+      if (/already|registered|exists/i.test(m)) setErro("Esse e-mail já tem conta. Use a aba \"Entrar\".");
+      else if (/weak|password|least/i.test(m)) setErro("Senha muito fraca. Use pelo menos 8 caracteres.");
+      else setErro("Não consegui criar a conta agora. Tente de novo em instantes.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function reenviar() {
+    limpar();
+    try {
+      await reenviarConfirmacao(email);
+      setInfo("Reenviei o e-mail de confirmação. ✅");
+    } catch {
+      setErro("Não consegui reenviar agora. Tente de novo em instantes.");
+    }
+  }
+
+  async function esqueci() {
+    limpar();
+    if (!email.trim()) return setErro("Digite seu e-mail acima para eu enviar o link de nova senha.");
+    try {
+      await redefinirSenha(email);
+      setInfo("Enviei um link para redefinir a senha no seu e-mail. ✅");
+    } catch {
+      setErro("Não consegui enviar agora. Tente de novo em instantes.");
+    }
+  }
+
+  const criando = aba === "criar";
+  const cardCls =
+    "rounded-3xl border border-emerald-400/15 bg-slate-900/60 p-7 shadow-2xl shadow-emerald-950/60 backdrop-blur-xl";
+  const molduraStyle = {
+    backgroundColor: "#04141a",
+    backgroundImage: `url(${bgLoginUrl})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+  };
+  const rodape = (
+    <div className="relative mt-6 flex items-center gap-1.5 text-[11px] text-slate-400/80">
+      <Lock size={12} /> Segurança · Privacidade · Confiança
+    </div>
+  );
+
+  // Tela intermediária: pediu para confirmar o e-mail
+  if (confirmar) {
+    return (
+      <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-10" style={molduraStyle}>
+        <div className="pointer-events-none absolute inset-0 bg-slate-950/40" />
+        <div className={"relative w-full max-w-sm text-center " + cardCls}>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/30">
+            <Mail size={28} />
+          </div>
+          <h1 className="text-xl font-bold text-white">Confirme seu e-mail</h1>
+          <p className="mt-2 text-sm text-slate-400">
+            Enviei um link de confirmação para <b className="text-slate-200">{email}</b>. Abra seu e-mail e clique no link para ativar a conta. Depois é só entrar. 🙂
+          </p>
+          {info && <p className="mt-3 text-sm text-emerald-300">{info}</p>}
+          {erro && <p className="mt-3 text-sm text-red-400">{erro}</p>}
+          <button onClick={reenviar} className="mt-5 w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
+            Reenviar e-mail
+          </button>
+          <button
+            onClick={() => {
+              setConfirmar(false);
+              setAba("entrar");
+              limpar();
+            }}
+            className="mt-2 w-full text-center text-xs text-slate-400 underline-offset-2 hover:underline"
+          >
+            Já confirmei — voltar para Entrar
+          </button>
+        </div>
+        {rodape}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-10" style={molduraStyle}>
+      <div className="pointer-events-none absolute inset-0 bg-slate-950/40" />
+      <div className={"relative w-full max-w-sm " + cardCls}>
+        <div className="mb-5 flex flex-col items-center text-center">
+          <img src={logoUrl} alt="Educação Financeira" className="h-24 object-contain" />
+          <h1 className="mt-1 text-2xl font-bold text-white">
+            <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
+              {criando ? "Criar" : "Entrar"}
+            </span>{" "}
+            {criando ? "sua conta" : "na conta"}
+          </h1>
+          <p className="mt-1 text-sm text-slate-400">Seus dados ficam guardados com segurança na sua conta.</p>
+        </div>
+
+        {/* Abas Entrar / Criar conta */}
+        <div className="mb-5 flex gap-1 rounded-xl border border-white/5 bg-slate-950/40 p-1">
+          {[
+            ["entrar", "Entrar"],
+            ["criar", "Criar conta"],
+          ].map(([v, r]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => {
+                setAba(v);
+                limpar();
+              }}
+              className={
+                "flex-1 rounded-lg px-2 py-1.5 text-sm font-semibold transition " +
+                (aba === v
+                  ? "bg-slate-800/80 text-emerald-300 ring-1 ring-emerald-400/30"
+                  : "text-slate-400 hover:text-slate-200")
+              }
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+
+        {criando ? (
+          <form onSubmit={fazerCriar} className="space-y-4">
+            <CampoAuth label="Como você quer ser chamada?" icon={User} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Seu nome" />
+            <CampoAuth label="E-mail" icon={Mail} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@email.com" />
+            <CampoAuth label="Crie uma senha (mín. 8 caracteres)" icon={Lock} senha value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="••••••••" />
+            {erro && <p className="text-sm text-red-400">{erro}</p>}
+            {info && <p className="text-sm text-emerald-300">{info}</p>}
+            <button type="submit" disabled={carregando} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition hover:brightness-110 disabled:opacity-60">
+              {carregando ? "Criando..." : "Criar conta"} {!carregando && <ArrowRight size={16} />}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={fazerEntrar} className="space-y-4">
+            <CampoAuth label="E-mail" icon={Mail} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@email.com" />
+            <CampoAuth label="Senha" icon={Lock} senha value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="••••••••" />
+            {erro && <p className="text-sm text-red-400">{erro}</p>}
+            {info && <p className="text-sm text-emerald-300">{info}</p>}
+            <button type="submit" disabled={carregando} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition hover:brightness-110 disabled:opacity-60">
+              {carregando ? "Entrando..." : "Entrar"} {!carregando && <ArrowRight size={16} />}
+            </button>
+            <button type="button" onClick={esqueci} className="w-full text-center text-xs text-slate-400 underline-offset-2 hover:underline">
+              Esqueci minha senha
+            </button>
+          </form>
+        )}
+
+        <div className="mt-5 flex items-center justify-center gap-1.5 text-xs text-slate-500">
+          <ShieldCheck size={14} className="text-emerald-400/70" />
+          Seus dados estão protegidos com criptografia de ponta
+        </div>
+      </div>
+      {rodape}
+    </div>
+  );
+}
+
+// Tela que aparece DEPOIS de clicar no link de "Esqueci a senha": a pessoa
+// digita a senha nova (a sessão de recuperação já está ativa). Ao salvar,
+// a senha é gravada e o app segue para dentro.
+function TelaNovaSenha({ onPronto }) {
+  const [senha, setSenha] = useState("");
+  const [conf, setConf] = useState("");
+  const [erro, setErro] = useState("");
+  const [carregando, setCarregando] = useState(false);
+  const [ok, setOk] = useState(false);
+
+  async function salvar(e) {
+    e.preventDefault();
+    setErro("");
+    if (senha.length < 8) return setErro("A senha precisa ter pelo menos 8 caracteres.");
+    if (senha !== conf) return setErro("As duas senhas precisam ser iguais.");
+    setCarregando(true);
+    try {
+      await atualizarSenha(senha);
+      setOk(true);
+      setTimeout(() => onPronto?.(), 1200);
+    } catch (err) {
+      const m = String(err?.message || "");
+      if (/session|expired|token|missing|not found/i.test(m))
+        setErro('Este link expirou. Volte à tela de entrada e peça outro em "Esqueci minha senha".');
+      else setErro("Não consegui salvar a senha agora. Tente de novo em instantes.");
+      setCarregando(false);
+    }
+  }
+
+  const molduraStyle = {
+    backgroundColor: "#04141a",
+    backgroundImage: `url(${bgLoginUrl})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+  };
+  const cardCls =
+    "rounded-3xl border border-emerald-400/15 bg-slate-900/60 p-7 shadow-2xl shadow-emerald-950/60 backdrop-blur-xl";
+
+  return (
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-10" style={molduraStyle}>
+      <div className="pointer-events-none absolute inset-0 bg-slate-950/40" />
+      <div className={"relative w-full max-w-sm " + cardCls}>
+        <div className="mb-5 flex flex-col items-center text-center">
+          <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/30">
+            <Lock size={28} />
+          </div>
+          <h1 className="text-xl font-bold text-white">Criar senha nova</h1>
+          <p className="mt-1 text-sm text-slate-400">Escolha uma senha para acessar sua conta.</p>
+        </div>
+
+        {ok ? (
+          <p className="rounded-xl bg-emerald-500/10 p-4 text-center text-sm font-medium text-emerald-300">
+            Senha salva! Entrando… ✅
+          </p>
+        ) : (
+          <form onSubmit={salvar} className="space-y-4">
+            <CampoAuth label="Nova senha (mín. 8 caracteres)" icon={Lock} senha value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="••••••••" />
+            <CampoAuth label="Repita a nova senha" icon={Lock} senha value={conf} onChange={(e) => setConf(e.target.value)} placeholder="••••••••" />
+            {erro && <p className="text-sm text-red-400">{erro}</p>}
+            <button type="submit" disabled={carregando} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition hover:brightness-110 disabled:opacity-60">
+              {carregando ? "Salvando..." : "Salvar senha"} {!carregando && <ArrowRight size={16} />}
+            </button>
+          </form>
+        )}
+      </div>
+      <div className="relative mt-6 flex items-center gap-1.5 text-[11px] text-slate-400/80">
+        <Lock size={12} /> Segurança · Privacidade · Confiança
+      </div>
+    </div>
+  );
+}
+
 function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci, onBiometria, temBio, escuro, onTema }) {
   const [nomeInput, setNomeInput] = useState("");
   const [pin, setPin] = useState("");
@@ -2247,6 +2674,11 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [login, setLogin] = useState(null);
   const [auth, setAuth] = useState("init");
+  const [sessao, setSessao] = useState(null); // sessão da nuvem (Supabase Auth)
+  const [userId, setUserId] = useState(null);
+  const [nuvemPronta, setNuvemPronta] = useState(false);
+  const ultimoSyncRef = useRef(null);   // último estado que já está na nuvem (base do diff)
+  const modoNuvemRef = useRef(false);   // true quando os dados vêm/vão pra nuvem
   const [escuro, setEscuro] = useState(() => {
     try {
       return localStorage.getItem(TEMA_KEY) === "escuro";
@@ -2271,20 +2703,37 @@ export default function App() {
     }
   }, [escuro]);
 
+  // Decide a tela de entrada quando JÁ existe sessão na nuvem:
+  // se este aparelho tem tranca rápida (PIN/biometria), pede; senão, abre.
+  function estadoComSessao(conf) {
+    const precisaTranca = conf?.pinHash && (conf.pedirSempre || conf.bioCredId);
+    // A janela de 1h evita repedir a tranca a cada recarregar — MAS quem
+    // marcou "pedir sempre" quer justamente ser pedido sempre: aí a graça
+    // não vale (só vale pra desbloqueio por biometria de conveniência).
+    const graca = desbloqueioRecente() && !conf?.pedirSempre;
+    if (precisaTranca && !graca) return "lock";
+    return "open";
+  }
+
   // Carrega dados salvos ao abrir
   useEffect(() => {
     (async () => {
       try {
+        const sess = await sessaoAtual();
+        setSessao(sess);
+        setUserId(sess?.user?.id ?? null);
         const rawLogin = await storageGet(LOGIN_KEY);
         const conf = rawLogin ? JSON.parse(rawLogin) : null;
-        if (conf && conf.pinHash) {
-          setLogin(conf);
-          setAuth(conf.pedirSempre || conf.bioCredId ? "lock" : "open");
-        } else {
-          setAuth("setup");
-        }
+        if (conf && conf.pinHash) setLogin(conf);
+        else if (sess?.user?.user_metadata?.nome) setLogin({ nome: sess.user.user_metadata.nome });
+        // Aberto por link de "Esqueci a senha" → tela de senha nova (mesmo
+        // que já exista sessão de recuperação, NÃO entrar direto).
+        // Sem sessão na nuvem → portão externo (entrar/criar conta).
+        // Com sessão → tranca rápida deste aparelho (ou abre direto).
+        if (URL_RECUPERACAO) setAuth("recuperar");
+        else setAuth(!sess ? "auth" : estadoComSessao(conf));
       } catch {
-        setAuth("setup");
+        setAuth(URL_RECUPERACAO ? "recuperar" : "auth");
       }
       try {
         const raw = await storageGet(STORAGE_KEY);
@@ -2301,13 +2750,27 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-salvamento com debounce de 800ms
+  // Auto-salvamento com debounce de 800ms.
+  // Sempre guarda um backup local; se estiver logado na nuvem, também
+  // sincroniza as diferenças (novos/alterados/excluídos) com o Supabase.
   useEffect(() => {
     if (!loaded || !dirtyRef.current) return;
     setStatus("saving");
     const t = setTimeout(async () => {
-      const ok = await storageSet(STORAGE_KEY, JSON.stringify(data));
-      if (ok) {
+      const okLocal = await storageSet(STORAGE_KEY, JSON.stringify(data)); // backup local
+      if (modoNuvemRef.current && nuvemPronta && userId) {
+        try {
+          await sincronizar(userId, ultimoSyncRef.current, data);
+          ultimoSyncRef.current = data;
+          setStatus("saved");
+          showToast("Salvo na nuvem ✓");
+        } catch (e) {
+          console.error("erro ao sincronizar com a nuvem:", e);
+          setStatus("error");
+          showToast("Não consegui salvar na nuvem. Vou tentar de novo.", true);
+          // não atualiza ultimoSyncRef → tenta de novo na próxima mudança
+        }
+      } else if (okLocal) {
         setStatus("saved");
         showToast("Salvo ✓");
       } else {
@@ -2317,7 +2780,7 @@ export default function App() {
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, loaded]);
+  }, [data, loaded, nuvemPronta, userId]);
 
   function showToast(msg, isError = false) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -2349,6 +2812,20 @@ export default function App() {
         ...esp,
         transacoes: esp.transacoes.map((x) => (x.id === id ? { ...x, status: "ok" } : x)),
       })),
+    // Cria uma categoria no espaço ATUAL (modo pessoal/empresarial vigente) e
+    // devolve o objeto {id,nome}. Fica salva só neste login (via user_id na
+    // nuvem) e só neste tipo (coluna modo). Se já existir pelo nome, reaproveita.
+    criarCategoria: (nome) => {
+      const limpo = (nome || "").trim();
+      if (!limpo) return null;
+      const existente = data[modo].categorias.find(
+        (c) => c.nome.toLowerCase() === limpo.toLowerCase(),
+      );
+      if (existente) return existente;
+      const nova = { id: uid(), nome: limpo };
+      atualizarEspaco((esp) => ({ ...esp, categorias: [...esp.categorias, nova] }));
+      return nova;
+    },
   };
 
   function trocarModo(novoModo) {
@@ -2381,14 +2858,101 @@ export default function App() {
     setAuth("setup");
   }
 
-  function sair() {
-    setAuth("lock");
+  async function sair() {
+    // Logout de verdade: encerra a sessão na nuvem e volta pro portão.
+    try {
+      await sairNuvem();
+    } catch {
+      /* segue mesmo se a rede falhar */
+    }
+    limparDesbloqueio(); // "Sair" encerra a janela de 1h → pede tranca no próximo acesso
+    setSessao(null);
+    setUserId(null);
+    setNuvemPronta(false);
+    modoNuvemRef.current = false;
+    ultimoSyncRef.current = null;
+    setAuth("auth");
   }
 
   // Verifica, ao abrir, se o aparelho tem Face ID / digital
   useEffect(() => {
     temAutenticadorPlataforma().then(setBioDisponivel);
   }, []);
+
+  // Renova a janela de 1h enquanto o app está aberto (assim recarregar não pede tranca)
+  useEffect(() => {
+    if (auth === "open") marcarDesbloqueio();
+  }, [auth]);
+
+  // Observa login/logout na nuvem (ex.: logo após entrar pela TelaAuth,
+  // ou quando a sessão expira/é encerrada em outra aba).
+  useEffect(() => {
+    const parar = aoMudarAuth((sess, evento) => {
+      setSessao(sess);
+      setUserId(sess?.user?.id ?? null);
+      // Chegou pelo link de "Esqueci a senha" → força a tela de senha nova.
+      if (evento === "PASSWORD_RECOVERY") return setAuth("recuperar");
+      if (!sess) setAuth("auth");
+      else setAuth((prev) => (prev === "auth" || prev === "init" ? estadoComSessao(login) : prev));
+    });
+    return parar;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [login]);
+
+  // Ao abrir logado, carrega os dados da NUVEM. No 1º acesso deste aparelho,
+  // se houver dados locais ainda não enviados, pergunta se quer subir (migração).
+  useEffect(() => {
+    if (auth !== "open" || !userId || nuvemPronta) return;
+    (async () => {
+      try {
+        const dadosNuvem = await carregarTudo();
+
+        // dados guardados neste aparelho (localStorage)
+        let locais = null;
+        try {
+          const raw = await storageGet(STORAGE_KEY);
+          locais = raw ? normalizarDados(JSON.parse(raw)) : null;
+        } catch {
+          /* ignora */
+        }
+        const txLocais = locais
+          ? (locais.pessoal.transacoes.length + locais.empresarial.transacoes.length)
+          : 0;
+        const jaMigrou = (await storageGet(MIGR_KEY + userId)) === "1";
+
+        if (txLocais > 0 && !jaMigrou) {
+          const ok = window.confirm(
+            "Encontramos os dados deste aparelho. Deseja enviá-los para a sua conta na nuvem?\n\nNada será apagado — eles ficam junto com o que você lançou pelo robô do Telegram.",
+          );
+          if (ok) {
+            await migrarLocalParaNuvem(userId, locais);
+            const merge = await carregarTudo(); // recarrega já com tudo junto
+            setData(merge);
+            ultimoSyncRef.current = merge;
+            await storageSet(MIGR_KEY + userId, "1"); // só marca se enviou de verdade
+            showToast("Dados enviados para a nuvem ✓");
+          } else {
+            // recusou: NÃO marca como migrado (pergunta de novo depois, pra não sumir dado)
+            setData(dadosNuvem);
+            ultimoSyncRef.current = dadosNuvem;
+          }
+        } else {
+          setData(dadosNuvem);
+          ultimoSyncRef.current = dadosNuvem;
+        }
+
+        dirtyRef.current = false; // o setData acima não deve disparar gravação
+        modoNuvemRef.current = true;
+        setNuvemPronta(true);
+      } catch (e) {
+        console.error("falha ao carregar da nuvem:", e);
+        showToast("Não consegui carregar da nuvem agora. Usando os dados do aparelho.", true);
+        modoNuvemRef.current = false; // segue no modo local (dados já carregados)
+        setNuvemPronta(true);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, userId, nuvemPronta]);
 
   async function ativarBiometria() {
     if (!login) return;
@@ -2489,6 +3053,27 @@ export default function App() {
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-400 dark:bg-slate-950">
         <Loader2 size={20} className="animate-spin" />
       </div>
+    );
+  }
+
+  if (auth === "auth") {
+    return <TelaAuth />;
+  }
+
+  if (auth === "recuperar") {
+    return (
+      <TelaNovaSenha
+        onPronto={() => {
+          // Senha gravada; a sessão já é válida. Limpa o hash da URL pra um
+          // refresh não reabrir a tela, e segue pro app.
+          try {
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          } catch {
+            /* ignora */
+          }
+          setAuth(estadoComSessao(login));
+        }}
+      />
     );
   }
 
