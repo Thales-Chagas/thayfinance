@@ -2925,12 +2925,13 @@ export default function App() {
             "Encontramos os dados deste aparelho. Deseja enviá-los para a sua conta na nuvem?\n\nNada será apagado — eles ficam junto com o que você lançou pelo robô do Telegram.",
           );
           if (ok) {
-            await migrarLocalParaNuvem(userId, locais);
+            // passa os dados da nuvem p/ casar categorias por nome (não duplicar)
+            const res = await migrarLocalParaNuvem(userId, locais, dadosNuvem);
             const merge = await carregarTudo(); // recarrega já com tudo junto
             setData(merge);
             ultimoSyncRef.current = merge;
             await storageSet(MIGR_KEY + userId, "1"); // só marca se enviou de verdade
-            showToast("Dados enviados para a nuvem ✓");
+            showToast(`${res.transacoes} lançamentos enviados para a nuvem ✓`);
           } else {
             // recusou: NÃO marca como migrado (pergunta de novo depois, pra não sumir dado)
             setData(dadosNuvem);

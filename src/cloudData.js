@@ -174,7 +174,12 @@ export async function sincronizar(userId, antes, depois) {
    Ordem respeita as chaves estrangeiras: categorias/contatos/centros
    ANTES das transações (que apontam pra eles). É idempotente (upsert por id).
    ============================================================ */
-export async function migrarLocalParaNuvem(userId, data) {
+// Monta os lotes que serão enviados (função PURA, sem rede — por isso é
+// testável). Casa categorias por nome com as que já estão na nuvem (não
+// duplica), remapeia as transações e anula FKs órfãs. Devolve os arrays
+// prontos + o mapa de remapeamento + contagem de reaproveitadas.
+export function montarMigracao(userId, data, nuvem) {
+  const modos = ["pessoal", "empresarial"];
   const categorias = [];
   const clientes = [];
   const fornecedores = [];
@@ -182,30 +187,76 @@ export async function migrarLocalParaNuvem(userId, data) {
   const metas = [];
   const transacoes = [];
 
-  for (const modo of ["pessoal", "empresarial"]) {
+  // Categorias que JÁ existem na nuvem (ex.: criadas pelo bot do Telegram),
+  // indexadas por "modo\nnome" — pra casar por nome e NÃO duplicar.
+  // idsValidos = tudo que vai existir no banco após migrar (nuvem + o que sobe):
+  // uma transação só pode apontar (FK) pra um desses, senão vira órfã.
+  const catPorNome = new Map();
+  const idsValidos = { categorias: new Set(), clientes: new Set(), fornecedores: new Set(), centros_custo: new Set() };
+  const chaveCat = (modo, nome) => modo + "\n" + (nome || "").toLowerCase().trim();
+  for (const modo of modos) {
+    const n = nuvem?.[modo] || {};
+    (n.categorias || []).forEach((c) => {
+      catPorNome.set(chaveCat(modo, c.nome), c.id);
+      idsValidos.categorias.add(c.id);
+    });
+    (n.clientes || []).forEach((c) => idsValidos.clientes.add(c.id));
+    (n.fornecedores || []).forEach((c) => idsValidos.fornecedores.add(c.id));
+    (n.centrosCusto || []).forEach((c) => idsValidos.centros_custo.add(c.id));
+  }
+
+  const remapCat = new Map(); // idLocal -> idNuvem (quando reaproveita uma já existente)
+  let catReusadas = 0;
+
+  for (const modo of modos) {
     const esp = data?.[modo];
     if (!esp) continue;
-    (esp.categorias || []).forEach((c) => categorias.push(nomeParaLinha(userId, modo, c)));
-    (esp.clientes || []).forEach((c) => clientes.push(contatoParaLinha(userId, modo, c)));
-    (esp.fornecedores || []).forEach((c) => fornecedores.push(contatoParaLinha(userId, modo, c)));
-    (esp.centrosCusto || []).forEach((c) => centros.push(nomeParaLinha(userId, modo, c)));
+
+    (esp.categorias || []).forEach((c) => {
+      const existente = catPorNome.get(chaveCat(modo, c.nome));
+      if (existente && existente !== c.id) {
+        remapCat.set(c.id, existente); // mesma categoria por nome → aponta pra da nuvem
+        catReusadas++;
+      } else {
+        categorias.push(nomeParaLinha(userId, modo, c));
+        catPorNome.set(chaveCat(modo, c.nome), c.id); // agora passa a existir (evita dup no lote)
+        idsValidos.categorias.add(c.id);
+      }
+    });
+    (esp.clientes || []).forEach((c) => {
+      clientes.push(contatoParaLinha(userId, modo, c));
+      idsValidos.clientes.add(c.id);
+    });
+    (esp.fornecedores || []).forEach((c) => {
+      fornecedores.push(contatoParaLinha(userId, modo, c));
+      idsValidos.fornecedores.add(c.id);
+    });
+    (esp.centrosCusto || []).forEach((c) => {
+      centros.push(nomeParaLinha(userId, modo, c));
+      idsValidos.centros_custo.add(c.id);
+    });
     (esp.metas || []).forEach((m) => metas.push(metaParaLinha(userId, modo, m)));
 
-    // Conjuntos de ids que REALMENTE vão subir, pra não deixar uma transação
-    // apontar (FK) pra um pai inexistente — senão o banco rejeita o lote inteiro.
-    const idsCat = new Set((esp.categorias || []).map((x) => x.id));
-    const idsCli = new Set((esp.clientes || []).map((x) => x.id));
-    const idsForn = new Set((esp.fornecedores || []).map((x) => x.id));
-    const idsCc = new Set((esp.centrosCusto || []).map((x) => x.id));
     (esp.transacoes || []).forEach((t) => {
       const linha = txParaLinha(userId, modo, t);
-      if (linha.categoria_id && !idsCat.has(linha.categoria_id)) linha.categoria_id = null;
-      if (linha.cliente_id && !idsCli.has(linha.cliente_id)) linha.cliente_id = null;
-      if (linha.fornecedor_id && !idsForn.has(linha.fornecedor_id)) linha.fornecedor_id = null;
-      if (linha.centro_custo_id && !idsCc.has(linha.centro_custo_id)) linha.centro_custo_id = null;
+      // 1) remapeia categoria deduplicada por nome
+      if (linha.categoria_id && remapCat.has(linha.categoria_id))
+        linha.categoria_id = remapCat.get(linha.categoria_id);
+      // 2) anula qualquer FK que não vá existir no banco (órfã) — senão o lote inteiro falha
+      if (linha.categoria_id && !idsValidos.categorias.has(linha.categoria_id)) linha.categoria_id = null;
+      if (linha.cliente_id && !idsValidos.clientes.has(linha.cliente_id)) linha.cliente_id = null;
+      if (linha.fornecedor_id && !idsValidos.fornecedores.has(linha.fornecedor_id)) linha.fornecedor_id = null;
+      if (linha.centro_custo_id && !idsValidos.centros_custo.has(linha.centro_custo_id)) linha.centro_custo_id = null;
       transacoes.push(linha);
     });
   }
+
+  return { categorias, clientes, fornecedores, centros, metas, transacoes, remapCat, catReusadas };
+}
+
+export async function migrarLocalParaNuvem(userId, data, nuvem) {
+  const { categorias, clientes, fornecedores, centros, metas, transacoes, catReusadas } =
+    montarMigracao(userId, data, nuvem);
 
   // 1) tabelas "pais" (podem entrar em paralelo)
   const passo1 = [
@@ -228,6 +279,7 @@ export async function migrarLocalParaNuvem(userId, data) {
   return {
     transacoes: transacoes.length,
     categorias: categorias.length,
+    categoriasReusadas: catReusadas, // casadas por nome com as que já estavam na nuvem
     metas: metas.length,
     clientes: clientes.length,
     fornecedores: fornecedores.length,
