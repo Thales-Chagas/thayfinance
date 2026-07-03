@@ -2652,7 +2652,7 @@ const NAV_PESSOAL = [
   { id: "metas", label: "Metas", icon: Target },
   { id: "categorias", label: "Categorias", icon: Tags },
   { id: "relatorios", label: "Relatórios", icon: FileText },
-  { id: "conta", label: "Minha Conta", icon: User },
+  { id: "conta", label: "Conta", icon: User },
 ];
 const NAV_EMPRESA = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -2666,16 +2666,24 @@ const NAV_EMPRESA = [
   { id: "metas", label: "Metas", icon: Target },
   { id: "categorias", label: "Categorias", icon: Tags },
   { id: "relatorios", label: "Relatórios", icon: FileText },
-  { id: "conta", label: "Minha Conta", icon: User },
+  { id: "conta", label: "Conta", icon: User },
 ];
 
 // Aba "Minha Conta": mostra quem está logado, ONDE os dados ficam (nuvem x
 // aparelho) e o status do Telegram. Ajuda a entender por que o saldo pode
 // parecer diferente entre o computador e o celular.
-function PaginaConta({ login, sessao, userId, onConectarTelegram, onSair }) {
+function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimparDados, onSair, showToast }) {
   const email = sessao?.user?.email || null;
   const naNuvem = !!sessao;
   const [tg, setTg] = useState(undefined); // undefined=carregando | null=não | obj=sim
+  const [alvoLimpar, setAlvoLimpar] = useState("pessoal"); // qual espaço limpar
+  const [confirmandoLimpar, setConfirmandoLimpar] = useState(false);
+
+  function limpar() {
+    onLimparDados?.(alvoLimpar);
+    setConfirmandoLimpar(false);
+    showToast?.(`Dados ${alvoLimpar === "empresarial" ? "empresariais" : "pessoais"} apagados.`);
+  }
 
   useEffect(() => {
     let vivo = true;
@@ -2765,6 +2773,76 @@ function PaginaConta({ login, sessao, userId, onConectarTelegram, onSair }) {
             <b>Importar dados</b> para enviar o que estava só no aparelho para a nuvem.
           </p>
         </div>
+      </div>
+
+      {/* Zona de perigo — limpar dados de um espaço */}
+      <div className="rounded-2xl border border-red-200 bg-white p-5 dark:border-red-900/60 dark:bg-slate-900">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-400">
+          <Trash2 size={16} /> Limpar dados
+        </h3>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Apaga <b>todos</b> os dados do espaço escolhido (lançamentos, metas, clientes,
+          fornecedores e centros de custo). As categorias voltam ao padrão. <b>Não dá pra desfazer.</b>
+        </p>
+
+        {/* escolher o espaço */}
+        <div className="mt-4 flex gap-2">
+          {[
+            { id: "pessoal", label: "Pessoal", icon: User },
+            { id: "empresarial", label: "Empresarial", icon: Briefcase },
+          ].map((o) => {
+            const ativo = alvoLimpar === o.id;
+            return (
+              <button
+                key={o.id}
+                onClick={() => {
+                  setAlvoLimpar(o.id);
+                  setConfirmandoLimpar(false);
+                }}
+                className={
+                  "flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition " +
+                  (ativo
+                    ? "border-red-400 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-950/50 dark:text-red-300"
+                    : "border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800")
+                }
+              >
+                <o.icon size={15} /> {o.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ação + confirmação */}
+        {!confirmandoLimpar ? (
+          <button
+            onClick={() => setConfirmandoLimpar(true)}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+          >
+            <Trash2 size={15} /> Limpar dados {alvoLimpar === "empresarial" ? "empresariais" : "pessoais"}
+          </button>
+        ) : (
+          <div className="mt-3 space-y-3 rounded-xl border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/40">
+            <p className="flex items-start gap-2 text-sm font-medium text-red-700 dark:text-red-300">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              Tem certeza? Isso vai apagar <b>todos</b> os dados{" "}
+              <b>{alvoLimpar === "empresarial" ? "Empresariais" : "Pessoais"}</b> de forma permanente.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmandoLimpar(false)}
+                className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-white dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={limpar}
+                className="flex-1 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                Sim, apagar tudo
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {onSair && (
@@ -3076,6 +3154,13 @@ export default function App() {
   function atualizarEspaco(fn) {
     dirtyRef.current = true;
     setData((prev) => ({ ...prev, [modo]: fn(prev[modo]) }));
+  }
+
+  // Apaga TODOS os dados de um espaço (pessoal OU empresarial) e devolve as
+  // categorias ao padrão. O auto-save cuida do resto (backup local + nuvem).
+  function limparEspaco(modoAlvo) {
+    dirtyRef.current = true;
+    setData((prev) => ({ ...prev, [modoAlvo]: espacoVazio(modoAlvo) }));
   }
 
   const acoesTransacao = {
@@ -3709,7 +3794,9 @@ export default function App() {
                   sessao={sessao}
                   userId={userId}
                   onConectarTelegram={() => setMostrarTelegram(true)}
+                  onLimparDados={limparEspaco}
                   onSair={sair}
+                  showToast={showToast}
                 />
               )}
             </>
