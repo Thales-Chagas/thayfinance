@@ -74,6 +74,9 @@ import {
   sairNuvem,
   sessaoAtual,
   aoMudarAuth,
+  marcarLoginNuvem,
+  limparLoginNuvem,
+  loginNuvemTs,
 } from "./cloudAuth";
 import { carregarTudo, sincronizar, migrarLocalParaNuvem } from "./cloudData";
 import { gerarCodigoTelegram, statusTelegram, desconectarTelegram, BOT_URL, BOT_USERNAME } from "./telegramLink";
@@ -104,9 +107,12 @@ const MIGR_KEY = "financas_app_migrado_"; // + userId: marca que já perguntamos
 const URL_RECUPERACAO =
   typeof window !== "undefined" && /[#&?]type=recovery/.test(window.location.hash || "");
 
-// Janela de desbloqueio: por 1h após desbloquear, recarregar não pede PIN/biometria.
+// Janela de desbloqueio: por 1h após desbloquear, recarregar/reabrir não pede
+// PIN/biometria (pede de novo só depois de 1h).
 const DESBLOQUEIO_KEY = "financas_app_desbloqueio";
 const GRACA_MS = 60 * 60 * 1000; // 1 hora
+// Login na nuvem (e-mail/senha) só é repedido a cada 24h.
+const NUVEM_MS = 24 * 60 * 60 * 1000; // 24 horas
 function marcarDesbloqueio() {
   try {
     localStorage.setItem(DESBLOQUEIO_KEY, String(Date.now()));
@@ -2581,7 +2587,7 @@ function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci, onBiom
                 onChange={(e) => setPedirSempre(e.target.checked)}
                 className="h-4 w-4 accent-emerald-600"
               />
-              Pedir o PIN sempre que o app abrir
+              Proteger com PIN (pede a cada 1 hora)
             </label>
             {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
             <button type="submit" className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700">
@@ -3063,13 +3069,12 @@ export default function App() {
   }, [escuro]);
 
   // Decide a tela de entrada quando JÁ existe sessão na nuvem:
-  // se este aparelho tem tranca rápida (PIN/biometria), pede; senão, abre.
+  // se este aparelho tem tranca rápida (PIN/biometria) E já passou 1h desde o
+  // último desbloqueio, pede o PIN; senão (dentro de 1h), abre direto.
   function estadoComSessao(conf) {
     const precisaTranca = conf?.pinHash && (conf.pedirSempre || conf.bioCredId);
-    // A janela de 1h evita repedir a tranca a cada recarregar — MAS quem
-    // marcou "pedir sempre" quer justamente ser pedido sempre: aí a graça
-    // não vale (só vale pra desbloqueio por biometria de conveniência).
-    const graca = desbloqueioRecente() && !conf?.pedirSempre;
+    // Janela de 1h: recarregar OU reabrir dentro de 1h não repede a tranca.
+    const graca = desbloqueioRecente();
     if (precisaTranca && !graca) return "lock";
     return "open";
   }
@@ -3089,8 +3094,28 @@ export default function App() {
         // que já exista sessão de recuperação, NÃO entrar direto).
         // Sem sessão na nuvem → portão externo (entrar/criar conta).
         // Com sessão → tranca rápida deste aparelho (ou abre direto).
-        if (URL_RECUPERACAO) setAuth("recuperar");
-        else setAuth(!sess ? "auth" : estadoComSessao(conf));
+        if (URL_RECUPERACAO) {
+          setAuth("recuperar");
+        } else if (!sess) {
+          setAuth("auth"); // sem sessão → portão externo (entrar/criar conta)
+        } else {
+          // Tem sessão. Ela só vale por 24h: passou disso → repede o login.
+          let ts = loginNuvemTs();
+          if (!ts) {
+            // sessão que já existia antes desta regra → começa a contar agora
+            marcarLoginNuvem();
+            ts = Date.now();
+          }
+          if (Date.now() - ts >= NUVEM_MS) {
+            sairNuvem().catch(() => {}); // encerra a sessão antiga
+            limparLoginNuvem();
+            setSessao(null);
+            setUserId(null);
+            setAuth("auth");
+          } else {
+            setAuth(estadoComSessao(conf)); // dentro das 24h → PIN (se >1h) ou abre
+          }
+        }
       } catch {
         setAuth(URL_RECUPERACAO ? "recuperar" : "auth");
       }
@@ -3232,6 +3257,7 @@ export default function App() {
       /* segue mesmo se a rede falhar */
     }
     limparDesbloqueio(); // "Sair" encerra a janela de 1h → pede tranca no próximo acesso
+    limparLoginNuvem();  // e zera o contador de 24h → pede e-mail/senha de novo
     setSessao(null);
     setUserId(null);
     setNuvemPronta(false);
@@ -3258,8 +3284,13 @@ export default function App() {
       setUserId(sess?.user?.id ?? null);
       // Chegou pelo link de "Esqueci a senha" → força a tela de senha nova.
       if (evento === "PASSWORD_RECOVERY") return setAuth("recuperar");
-      if (!sess) setAuth("auth");
-      else setAuth((prev) => (prev === "auth" || prev === "init" ? estadoComSessao(login) : prev));
+      // A restauração da sessão ao abrir (INITIAL_SESSION) e o refresh de token
+      // NÃO decidem a tela: quem decide o estado inicial é a carga (com a regra
+      // das 24h). Aqui só reagimos a um login FEITO na tela de entrada
+      // (prev === "auth") ou a um logout — assim nada fura a checagem de 24h.
+      if (evento === "INITIAL_SESSION") return;
+      if (!sess) return setAuth("auth");
+      setAuth((prev) => (prev === "auth" ? estadoComSessao(login) : prev));
     });
     return parar;
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -10,6 +10,32 @@
 
 import { supabase } from "./supabaseClient";
 
+// Marca de tempo do ÚLTIMO login real na nuvem (e-mail/senha). Serve para o
+// app repedir o login a cada 24h, mesmo com a sessão do Supabase persistida.
+const LOGIN_NUVEM_KEY = "financas_app_login_nuvem";
+export function marcarLoginNuvem() {
+  try {
+    localStorage.setItem(LOGIN_NUVEM_KEY, String(Date.now()));
+  } catch {
+    /* sem armazenamento */
+  }
+}
+export function limparLoginNuvem() {
+  try {
+    localStorage.removeItem(LOGIN_NUVEM_KEY);
+  } catch {
+    /* sem armazenamento */
+  }
+}
+// timestamp do último login (0 se nunca).
+export function loginNuvemTs() {
+  try {
+    return Number(localStorage.getItem(LOGIN_NUVEM_KEY) || 0);
+  } catch {
+    return 0;
+  }
+}
+
 // Cadastro por e-mail/senha. Guarda o nome nos metadados do usuário
 // (o trigger handle_new_user copia isso pro profiles).
 export async function cadastrar(email, senha, nome) {
@@ -31,6 +57,7 @@ export async function entrar(email, senha) {
     password: senha,
   });
   if (error) throw error;
+  marcarLoginNuvem(); // conta os 24h a partir de agora
   return data.session;
 }
 
@@ -55,6 +82,7 @@ export async function redefinirSenha(email) {
 export async function atualizarSenha(novaSenha) {
   const { error } = await supabase.auth.updateUser({ password: novaSenha });
   if (error) throw error;
+  marcarLoginNuvem(); // acabou de entrar pelo link → conta os 24h
 }
 
 // Encerra a sessão na nuvem (logout de verdade).
