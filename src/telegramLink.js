@@ -14,6 +14,18 @@ export const BOT_URL = `https://t.me/${BOT_USERNAME}`;
 
 const VALIDADE_MIN = 15; // código expira em 15 min
 
+// Código de 6 dígitos com gerador CRIPTOGRÁFICO (não Math.random, que é
+// previsível). Rejeita valores fora da faixa pra não ter viés de módulo.
+function codigo6Seguro() {
+  const buf = new Uint32Array(1);
+  // 4_294_800_000 = 900000 * 4772 (maior múltiplo <= 2^32): corta a cauda
+  // pra o resto ser uniforme em 0..899999, sem viés de módulo.
+  do {
+    crypto.getRandomValues(buf);
+  } while (buf[0] >= 4_294_800_000);
+  return String(100000 + (buf[0] % 900000));
+}
+
 // Gera um código de 6 dígitos e grava (1 código ativo por conta).
 // Retorna { codigo, expiraEm }.
 export async function gerarCodigoTelegram(userId, nome) {
@@ -21,7 +33,7 @@ export async function gerarCodigoTelegram(userId, nome) {
   await supabase.from("telegram_codigos").delete().eq("user_id", userId);
   const expiraEm = new Date(Date.now() + VALIDADE_MIN * 60_000).toISOString();
   for (let tentativa = 0; tentativa < 6; tentativa++) {
-    const codigo = String(Math.floor(100000 + Math.random() * 900000));
+    const codigo = codigo6Seguro();
     const { error } = await supabase
       .from("telegram_codigos")
       .insert({ codigo, user_id: userId, nome: nome || null, expira_em: expiraEm });
