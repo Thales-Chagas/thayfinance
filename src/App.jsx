@@ -2782,10 +2782,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, loaded, nuvemPronta, userId]);
 
-  function showToast(msg, isError = false) {
+  function showToast(msg, isError = false, ms = 1800) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ msg, isError });
-    toastTimer.current = setTimeout(() => setToast(null), 1800);
+    toastTimer.current = setTimeout(() => setToast(null), ms);
   }
 
   const espaco = data[modo];
@@ -3002,16 +3002,24 @@ export default function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
+      // 1) ler + reconhecer o arquivo (erros separados p/ diagnóstico)
+      let dados;
       try {
         const parsed = JSON.parse(reader.result);
-        const dados = normalizarDados(parsed);
-        if (!dados) throw new Error("estrutura inválida");
+        dados = normalizarDados(parsed);
+      } catch (e) {
+        console.error("JSON inválido no backup:", e);
+        return showToast("O arquivo não é um JSON válido. Exporte de novo pelo app.", true, 6000);
+      }
+      if (!dados) return showToast("Estrutura do backup não reconhecida. Exporte de novo pelo app.", true, 6000);
 
-        if (modoNuvemRef.current && userId) {
-          // Logado na nuvem: SOMA o backup à conta com dedupe (categorias
-          // iguais por nome não duplicam), em vez de substituir o aparelho.
-          if (!window.confirm("Enviar este backup para a sua conta na nuvem?\n\nEle será somado ao que já existe — categorias com o mesmo nome não duplicam, e nada é apagado.")) return;
-          setStatus("saving");
+      // 2) aplicar
+      if (modoNuvemRef.current && userId) {
+        // Logado na nuvem: SOMA o backup à conta com dedupe (categorias
+        // iguais por nome não duplicam), em vez de substituir o aparelho.
+        if (!window.confirm("Enviar este backup para a sua conta na nuvem?\n\nEle será somado ao que já existe — categorias com o mesmo nome não duplicam, e nada é apagado.")) return;
+        setStatus("saving");
+        try {
           const res = await migrarLocalParaNuvem(userId, dados, data);
           const merge = await carregarTudo();
           dirtyRef.current = false; // o setData abaixo não deve disparar nova gravação
@@ -3019,15 +3027,17 @@ export default function App() {
           ultimoSyncRef.current = merge;
           setStatus("saved");
           showToast(`${res.transacoes} lançamentos enviados para a nuvem ✓`);
-        } else {
-          if (!window.confirm("Importar este backup? Os dados atuais deste aparelho serão substituídos pelos do arquivo.")) return;
-          dirtyRef.current = true;
-          setData(dados);
-          showToast("Backup importado ✓");
+        } catch (e) {
+          console.error("falha ao enviar backup pra nuvem:", e);
+          setStatus("error");
+          const detalhe = e?.message || e?.error_description || e?.details || String(e);
+          showToast("A nuvem recusou o envio: " + detalhe, true, 12000);
         }
-      } catch (e) {
-        console.error("falha ao importar backup:", e);
-        showToast("Não consegui importar. Use um backup exportado pelo próprio app.", true);
+      } else {
+        if (!window.confirm("Importar este backup? Os dados atuais deste aparelho serão substituídos pelos do arquivo.")) return;
+        dirtyRef.current = true;
+        setData(dados);
+        showToast("Backup importado ✓");
       }
     };
     reader.onerror = () => showToast("Não foi possível ler o arquivo.", true);

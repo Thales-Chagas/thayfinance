@@ -11,6 +11,34 @@
 
 import { supabase } from "./supabaseClient";
 
+/* ---------- normalização de ids (colunas do banco são uuid) ----------
+   Dados antigos podem ter id NÃO-uuid (o uid() do app cai num fallback
+   Date.now()+random quando o navegador não tem crypto.randomUUID — comum em
+   celular). O Postgres recusa esses ids na coluna uuid. Então convertemos
+   ids não-uuid para um uuid DETERMINÍSTICO (mesma entrada → mesmo uuid), pra
+   reimportar o mesmo backup não duplicar. ----------------------------- */
+const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const ehUuid = (s) => typeof s === "string" && RE_UUID.test(s);
+
+// uuid estável a partir de uma string (4 blocos FNV-1a com sementes distintas).
+// Não é criptográfico — só precisa ser determinístico e bem distribuído.
+function uuidDeString(str) {
+  const s = String(str);
+  const bloco = (seed) => {
+    let h = seed >>> 0;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return ("00000000" + (h >>> 0).toString(16)).slice(-8);
+  };
+  const hex = bloco(2166136261) + bloco(2246822519) + bloco(3266489917) + bloco(668265263);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+// id final para uma linha que vai subir: mantém se já é uuid, senão normaliza.
+const idFinal = (oldId) => (ehUuid(oldId) ? oldId : uuidDeString(oldId));
+
 /* ---------- transações: app <-> linha do banco ---------- */
 function txParaLinha(userId, modo, t) {
   return {
@@ -189,23 +217,17 @@ export function montarMigracao(userId, data, nuvem) {
 
   // Categorias que JÁ existem na nuvem (ex.: criadas pelo bot do Telegram),
   // indexadas por "modo\nnome" — pra casar por nome e NÃO duplicar.
-  // idsValidos = tudo que vai existir no banco após migrar (nuvem + o que sobe):
-  // uma transação só pode apontar (FK) pra um desses, senão vira órfã.
   const catPorNome = new Map();
-  const idsValidos = { categorias: new Set(), clientes: new Set(), fornecedores: new Set(), centros_custo: new Set() };
   const chaveCat = (modo, nome) => modo + "\n" + (nome || "").toLowerCase().trim();
   for (const modo of modos) {
-    const n = nuvem?.[modo] || {};
-    (n.categorias || []).forEach((c) => {
-      catPorNome.set(chaveCat(modo, c.nome), c.id);
-      idsValidos.categorias.add(c.id);
-    });
-    (n.clientes || []).forEach((c) => idsValidos.clientes.add(c.id));
-    (n.fornecedores || []).forEach((c) => idsValidos.fornecedores.add(c.id));
-    (n.centrosCusto || []).forEach((c) => idsValidos.centros_custo.add(c.id));
+    (nuvem?.[modo]?.categorias || []).forEach((c) => catPorNome.set(chaveCat(modo, c.nome), c.id));
   }
 
-  const remapCat = new Map(); // idLocal -> idNuvem (quando reaproveita uma já existente)
+  // Mapas idLocal -> idFinal (uuid que REALMENTE vai pro banco) por entidade.
+  // Cobrem os dois casos: (a) categoria casada por nome com a da nuvem, e
+  // (b) id não-uuid normalizado. As transações resolvem suas FKs por aqui —
+  // se o id não estiver no mapa, é órfão → null (senão o lote falha).
+  const fCat = new Map(), fCli = new Map(), fForn = new Map(), fCc = new Map();
   let catReusadas = 0;
 
   for (const modo of modos) {
@@ -214,44 +236,45 @@ export function montarMigracao(userId, data, nuvem) {
 
     (esp.categorias || []).forEach((c) => {
       const existente = catPorNome.get(chaveCat(modo, c.nome));
-      if (existente && existente !== c.id) {
-        remapCat.set(c.id, existente); // mesma categoria por nome → aponta pra da nuvem
-        catReusadas++;
+      if (existente) {
+        fCat.set(c.id, existente); // reusa a da nuvem (mesmo nome)
+        if (existente !== c.id) catReusadas++;
       } else {
-        categorias.push(nomeParaLinha(userId, modo, c));
-        catPorNome.set(chaveCat(modo, c.nome), c.id); // agora passa a existir (evita dup no lote)
-        idsValidos.categorias.add(c.id);
+        const nid = idFinal(c.id);
+        categorias.push(nomeParaLinha(userId, modo, { ...c, id: nid }));
+        catPorNome.set(chaveCat(modo, c.nome), nid); // evita dup no mesmo lote
+        fCat.set(c.id, nid);
       }
     });
     (esp.clientes || []).forEach((c) => {
-      clientes.push(contatoParaLinha(userId, modo, c));
-      idsValidos.clientes.add(c.id);
+      const nid = idFinal(c.id);
+      clientes.push(contatoParaLinha(userId, modo, { ...c, id: nid }));
+      fCli.set(c.id, nid);
     });
     (esp.fornecedores || []).forEach((c) => {
-      fornecedores.push(contatoParaLinha(userId, modo, c));
-      idsValidos.fornecedores.add(c.id);
+      const nid = idFinal(c.id);
+      fornecedores.push(contatoParaLinha(userId, modo, { ...c, id: nid }));
+      fForn.set(c.id, nid);
     });
     (esp.centrosCusto || []).forEach((c) => {
-      centros.push(nomeParaLinha(userId, modo, c));
-      idsValidos.centros_custo.add(c.id);
+      const nid = idFinal(c.id);
+      centros.push(nomeParaLinha(userId, modo, { ...c, id: nid }));
+      fCc.set(c.id, nid);
     });
-    (esp.metas || []).forEach((m) => metas.push(metaParaLinha(userId, modo, m)));
+    (esp.metas || []).forEach((m) => metas.push(metaParaLinha(userId, modo, { ...m, id: idFinal(m.id) })));
 
     (esp.transacoes || []).forEach((t) => {
-      const linha = txParaLinha(userId, modo, t);
-      // 1) remapeia categoria deduplicada por nome
-      if (linha.categoria_id && remapCat.has(linha.categoria_id))
-        linha.categoria_id = remapCat.get(linha.categoria_id);
-      // 2) anula qualquer FK que não vá existir no banco (órfã) — senão o lote inteiro falha
-      if (linha.categoria_id && !idsValidos.categorias.has(linha.categoria_id)) linha.categoria_id = null;
-      if (linha.cliente_id && !idsValidos.clientes.has(linha.cliente_id)) linha.cliente_id = null;
-      if (linha.fornecedor_id && !idsValidos.fornecedores.has(linha.fornecedor_id)) linha.fornecedor_id = null;
-      if (linha.centro_custo_id && !idsValidos.centros_custo.has(linha.centro_custo_id)) linha.centro_custo_id = null;
+      const linha = txParaLinha(userId, modo, { ...t, id: idFinal(t.id) });
+      // resolve cada FK pelo mapa (id local -> id final); ausente = órfã → null
+      linha.categoria_id = t.categoriaId != null && fCat.has(t.categoriaId) ? fCat.get(t.categoriaId) : null;
+      linha.cliente_id = t.clienteId != null && fCli.has(t.clienteId) ? fCli.get(t.clienteId) : null;
+      linha.fornecedor_id = t.fornecedorId != null && fForn.has(t.fornecedorId) ? fForn.get(t.fornecedorId) : null;
+      linha.centro_custo_id = t.centroCustoId != null && fCc.has(t.centroCustoId) ? fCc.get(t.centroCustoId) : null;
       transacoes.push(linha);
     });
   }
 
-  return { categorias, clientes, fornecedores, centros, metas, transacoes, remapCat, catReusadas };
+  return { categorias, clientes, fornecedores, centros, metas, transacoes, catReusadas };
 }
 
 export async function migrarLocalParaNuvem(userId, data, nuvem) {
