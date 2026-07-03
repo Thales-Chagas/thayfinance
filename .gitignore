@@ -11,5 +11,8 @@ supabase/.temp/
 # Guia local do bot do Telegram — contém segredos (TELEGRAM_SECRET). Nunca publicar.
 PASSO-A-PASSO-TELEGRAM.md
 
+# Guia local do backup automático — contém segredo (BACKUP_SECRET). Nunca publicar.
+PASSO-A-PASSO-BACKUP.md
+
 # Configura��o local do Claude Code
 .claude/

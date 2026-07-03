@@ -9,3 +9,8 @@ verify_jwt = true
 # A própria função valida o header secret do Telegram.
 [functions.telegram]
 verify_jwt = false
+
+# Backup automático (chamado pelo agendador pg_cron, sem login Supabase).
+# A própria função valida o header X-Backup-Secret.
+[functions.backup]
+verify_jwt = false
