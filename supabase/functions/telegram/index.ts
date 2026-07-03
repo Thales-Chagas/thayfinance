@@ -279,6 +279,107 @@ async function gravarTransacao(userId: string, modo: string, dados: any) {
   return tx?.id ?? null;
 }
 
+// ------------------------------------------------------------
+// Tutorial completo (mostrado a quem JÁ está conectado)
+function textoTutorial(): string {
+  return [
+    "👋 <b>Oi! Eu sou o assistente do ThayFinance.</b>",
+    "",
+    "Me mande de 3 jeitos:",
+    "🎙️ um <b>áudio</b> falando o gasto",
+    "📷 uma <b>foto do comprovante</b>",
+    "✍️ ou <b>escreva</b> (ex: \"gastei 50 no mercado\")",
+    "",
+    "━━━━━━━━━━━━━━━━",
+    "👤 <b>Pessoal x 🏢 Empresarial</b>",
+    "",
+    "Por padrão eu lanço tudo na sua conta <b>Pessoal</b>.",
+    "Pra jogar na <b>Empresarial</b>, é só citar a <b>empresa</b> na mensagem. Exemplos:",
+    "• <i>\"paguei 200 de energia da empresa\"</i>",
+    "• <i>\"recebi 500, faturamento empresarial\"</i>",
+    "• numa <b>foto</b>, escreva <b>empresa</b> na legenda ao enviar",
+    "",
+    "Palavras que mando pra Empresarial: <i>empresa, empresarial, firma, CNPJ, negócio, comercial</i>.",
+    "",
+    "💚 Bora começar!",
+  ].join("\n");
+}
+
+// Instruções de conexão (mostrado a quem ainda NÃO está na allowlist)
+function textoComoConectar(): string {
+  return [
+    "👋 <b>Oi! Eu sou o assistente do ThayFinance.</b>",
+    "",
+    "Antes de começar, preciso saber de quem é essa conversa. É rapidinho:",
+    "",
+    "1️⃣ Abra o <b>app ThayFinance</b> e entre na sua conta",
+    "2️⃣ Toque em <b>Conectar Telegram</b> (na barra lateral)",
+    "3️⃣ O app mostra um <b>código de 6 números</b>",
+    "4️⃣ Me mande aqui: <code>/conectar 123456</code>",
+    "",
+    "🔒 Isso liga este Telegram à sua conta pra ninguém mais lançar por você.",
+    "",
+    "💚 <i>ThayFinance · Controle Financeiro</i>",
+  ].join("\n");
+}
+
+// ------------------------------------------------------------
+// Conexão self-service: valida o código de 6 dígitos vindo do app e
+// cria o vínculo chat_id -> user_id. Código é de USO ÚNICO e expira.
+async function tratarConectar(chatId: number, texto: string) {
+  const m = texto.match(/(\d{6})/);
+  if (!m) {
+    await responder(
+      chatId,
+      "Pra conectar, mande <b>/conectar</b> com o código de 6 números que aparece no app.\nExemplo: <code>/conectar 123456</code>",
+      true,
+    );
+    return;
+  }
+  const codigo = m[1];
+  // higiene: apaga códigos já expirados (de qualquer um)
+  await db.from("telegram_codigos").delete().lt("expira_em", new Date().toISOString());
+  const { data: c } = await db.from("telegram_codigos")
+    .select("user_id, nome, expira_em").eq("codigo", codigo).maybeSingle();
+  if (!c) {
+    await responder(
+      chatId,
+      "❌ <b>Código inválido ou expirado.</b>\nAbra o app em <b>Conectar Telegram</b>, gere um código novo e me mande de novo. 🙂",
+      true,
+    );
+    return;
+  }
+  // vincula (chat_id é PK: se a pessoa reconectar com outra conta, atualiza)
+  const { error: eLink } = await db.from("telegram_links").upsert({
+    chat_id: chatId,
+    user_id: c.user_id,
+    nome: c.nome,
+    verificado_em: new Date().toISOString(),
+  });
+  if (eLink) {
+    console.error("erro ao vincular telegram_links:", eLink);
+    await responder(chatId, "Deu um probleminha ao conectar. Tente de novo em instantes. 🙏");
+    return;
+  }
+  // código é de uso único
+  await db.from("telegram_codigos").delete().eq("codigo", codigo);
+  await responder(
+    chatId,
+    [
+      "✅ <b>Tudo certo! Você está conectado.</b>",
+      c.nome ? `\n👤 Conta: <b>${escHtml(c.nome)}</b>` : "",
+      "",
+      "Agora é só me mandar:",
+      "🎙️ um <b>áudio</b> falando o gasto",
+      "📷 uma <b>foto do comprovante</b>",
+      "✍️ ou <b>escrever</b> (ex: \"gastei 50 no mercado\")",
+      "",
+      "💚 <i>ThayFinance · Controle Financeiro</i>",
+    ].join("\n"),
+    true,
+  );
+}
+
 // ============================================================
 Deno.serve(async (req) => {
   // 1) só aceita POST com o secret correto do webhook
@@ -296,6 +397,27 @@ Deno.serve(async (req) => {
       if (!msg) return;
       const chatId: number = msg.chat?.id;
       if (!chatId) return;
+
+      // 1.5) /conectar <código> — funciona ANTES da allowlist, porque é
+      //      exatamente por aqui que a pessoa ENTRA na allowlist. O app gera
+      //      o código (tabela telegram_codigos) e a pessoa digita aqui.
+      const textoCmd = typeof msg.text === "string" ? msg.text.trim() : "";
+      if (/^\/conectar\b/i.test(textoCmd)) {
+        if (!dentroDoLimite(chatId)) {
+          await responder(chatId, "Muitas tentativas seguidas. Espere um minutinho e tente de novo. 🙂");
+          return;
+        }
+        await tratarConectar(chatId, textoCmd);
+        return;
+      }
+      // /start /ajuda /help respondem MESMO sem conexão, pra guiar o onboarding
+      if (/^\/(start|ajuda|help)\b/i.test(textoCmd)) {
+        if (!dentroDoLimite(chatId)) return;
+        const { data: jaLigado } = await db.from("telegram_links")
+          .select("chat_id").eq("chat_id", chatId).maybeSingle();
+        await responder(chatId, jaLigado ? textoTutorial() : textoComoConectar(), true);
+        return;
+      }
 
       // 2) allowlist — chat_id precisa estar cadastrado
       const { data: link } = await db.from("telegram_links")
@@ -356,34 +478,6 @@ Deno.serve(async (req) => {
 
       // ---- TEXTO ----
       if (typeof msg.text === "string" && msg.text.trim()) {
-        if (["/start", "/ajuda", "/help"].includes(msg.text.trim().toLowerCase())) {
-          await responder(
-            chatId,
-            [
-              "👋 <b>Oi! Eu sou o assistente do ThayFinance.</b>",
-              "",
-              "Me mande de 3 jeitos:",
-              "🎙️ um <b>áudio</b> falando o gasto",
-              "📷 uma <b>foto do comprovante</b>",
-              "✍️ ou <b>escreva</b> (ex: \"gastei 50 no mercado\")",
-              "",
-              "━━━━━━━━━━━━━━━━",
-              "👤 <b>Pessoal x 🏢 Empresarial</b>",
-              "",
-              "Por padrão eu lanço tudo na sua conta <b>Pessoal</b>.",
-              "Pra jogar na <b>Empresarial</b>, é só citar a <b>empresa</b> na mensagem. Exemplos:",
-              "• <i>\"paguei 200 de energia da empresa\"</i>",
-              "• <i>\"recebi 500, faturamento empresarial\"</i>",
-              "• numa <b>foto</b>, escreva <b>empresa</b> na legenda ao enviar",
-              "",
-              "Palavras que mando pra Empresarial: <i>empresa, empresarial, firma, CNPJ, negócio, comercial</i>.",
-              "",
-              "💚 Bora começar!",
-            ].join("\n"),
-            true,
-          );
-          return;
-        }
         const dados = validarLancamento(await fraseParaLancamento(msg.text));
         if (!dados) { await responder(chatId, "Não achei um valor nessa mensagem. Tente algo como: \"gastei 50 no mercado ontem\". 🙂"); return; }
         if (!dados.descricao) dados.descricao = msg.text;

@@ -44,6 +44,9 @@ import {
   EyeOff,
   ShieldCheck,
   ArrowRight,
+  Send,
+  Copy,
+  RefreshCw,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -73,6 +76,7 @@ import {
   aoMudarAuth,
 } from "./cloudAuth";
 import { carregarTudo, sincronizar, migrarLocalParaNuvem } from "./cloudData";
+import { gerarCodigoTelegram, statusTelegram, desconectarTelegram, BOT_URL, BOT_USERNAME } from "./telegramLink";
 import {
   temAutenticadorPlataforma,
   registrarBiometria,
@@ -2648,6 +2652,7 @@ const NAV_PESSOAL = [
   { id: "metas", label: "Metas", icon: Target },
   { id: "categorias", label: "Categorias", icon: Tags },
   { id: "relatorios", label: "Relatórios", icon: FileText },
+  { id: "conta", label: "Minha Conta", icon: User },
 ];
 const NAV_EMPRESA = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -2661,7 +2666,282 @@ const NAV_EMPRESA = [
   { id: "metas", label: "Metas", icon: Target },
   { id: "categorias", label: "Categorias", icon: Tags },
   { id: "relatorios", label: "Relatórios", icon: FileText },
+  { id: "conta", label: "Minha Conta", icon: User },
 ];
+
+// Aba "Minha Conta": mostra quem está logado, ONDE os dados ficam (nuvem x
+// aparelho) e o status do Telegram. Ajuda a entender por que o saldo pode
+// parecer diferente entre o computador e o celular.
+function PaginaConta({ login, sessao, userId, onConectarTelegram, onSair }) {
+  const email = sessao?.user?.email || null;
+  const naNuvem = !!sessao;
+  const [tg, setTg] = useState(undefined); // undefined=carregando | null=não | obj=sim
+
+  useEffect(() => {
+    let vivo = true;
+    if (userId) {
+      statusTelegram(userId).then((v) => vivo && setTg(v)).catch(() => vivo && setTg(null));
+    } else {
+      setTg(null);
+    }
+    return () => {
+      vivo = false;
+    };
+  }, [userId]);
+
+  const Linha = ({ rotulo, children }) => (
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0 dark:border-slate-800">
+      <span className="text-sm text-slate-500 dark:text-slate-400">{rotulo}</span>
+      <span className="text-right text-sm font-medium text-slate-800 dark:text-slate-100">{children}</span>
+    </div>
+  );
+
+  return (
+    <div className="max-w-2xl space-y-5">
+      {/* Cartão do perfil */}
+      <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        {login?.foto ? (
+          <img src={login.foto} alt="" className="h-16 w-16 rounded-full object-cover" />
+        ) : (
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-2xl font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            {(login?.nome || email || "?").trim().charAt(0).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-lg font-bold text-slate-800 dark:text-slate-100">{login?.nome || "Minha conta"}</p>
+          <p className="truncate text-sm text-slate-400">{email || "Conta local (sem nuvem)"}</p>
+        </div>
+      </div>
+
+      {/* Onde ficam os dados */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="mb-1 text-sm font-bold text-slate-700 dark:text-slate-200">Seus dados</h3>
+        <Linha rotulo="Onde ficam guardados">
+          {naNuvem ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+              <Cloud size={14} /> Na nuvem
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <Lock size={14} /> Só neste aparelho
+            </span>
+          )}
+        </Linha>
+        <Linha rotulo="E-mail da conta">{email || "—"}</Linha>
+        <Linha rotulo="Identificador">
+          <span className="font-mono text-xs text-slate-400">{userId ? userId.slice(0, 8) + "…" : "—"}</span>
+        </Linha>
+      </div>
+
+      {/* Telegram */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Bot do Telegram</h3>
+            <p className="mt-0.5 text-sm text-slate-400">
+              {tg === undefined ? "Verificando..." : tg ? "Conectado ✅" : "Não conectado"}
+            </p>
+          </div>
+          {userId && (
+            <button
+              onClick={onConectarTelegram}
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
+            >
+              <Send size={15} /> {tg ? "Gerenciar" : "Conectar"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Explicação do saldo diferente entre aparelhos */}
+      <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+        <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+        <div className="space-y-1">
+          <p className="font-semibold">O saldo aqui está diferente do celular?</p>
+          <p className="text-amber-700/90 dark:text-amber-300/80">
+            Cada aparelho mostra os dados de <b>onde ele está ligado</b>. Se um aparelho está{" "}
+            <b>na nuvem</b> e o outro guarda os dados <b>só no próprio aparelho</b>, os saldos vão
+            parecer diferentes. Para os dois baterem, entre com a <b>mesma conta</b> nos dois e use{" "}
+            <b>Importar dados</b> para enviar o que estava só no aparelho para a nuvem.
+          </p>
+        </div>
+      </div>
+
+      {onSair && (
+        <button
+          onClick={onSair}
+          className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+        >
+          <LogOut size={16} /> Sair da conta
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Conectar o bot do Telegram à conta: o app gera um código de 6 números,
+// a pessoa manda "/conectar 123456" no bot e o vínculo é criado sozinho.
+function ModalConectarTelegram({ userId, nome, onFechar, showToast }) {
+  const [carregando, setCarregando] = useState(true);
+  const [vinculo, setVinculo] = useState(null); // { chat_id } se já conectado
+  const [codigo, setCodigo] = useState(null);
+  const [gerando, setGerando] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    statusTelegram(userId)
+      .then((v) => vivo && setVinculo(v))
+      .catch(() => {})
+      .finally(() => vivo && setCarregando(false));
+    return () => {
+      vivo = false;
+    };
+  }, [userId]);
+
+  async function gerar() {
+    setGerando(true);
+    try {
+      const { codigo } = await gerarCodigoTelegram(userId, nome);
+      setCodigo(codigo);
+    } catch (e) {
+      showToast(e?.message || "Não consegui gerar o código.", true, 5000);
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  async function desconectar() {
+    if (!window.confirm("Desligar o Telegram desta conta? Você pode reconectar quando quiser.")) return;
+    try {
+      await desconectarTelegram(userId);
+      setVinculo(null);
+      setCodigo(null);
+      showToast("Telegram desconectado.");
+    } catch {
+      showToast("Não consegui desconectar agora.", true);
+    }
+  }
+
+  function copiarComando() {
+    const texto = `/conectar ${codigo}`;
+    navigator.clipboard?.writeText(texto).then(
+      () => {
+        setCopiado(true);
+        setTimeout(() => setCopiado(false), 1500);
+      },
+      () => {},
+    );
+  }
+
+  return (
+    <Modal titulo="Conectar Telegram" onFechar={onFechar}>
+      {carregando ? (
+        <div className="flex items-center justify-center gap-2 py-10 text-slate-400">
+          <Loader2 size={18} className="animate-spin" /> Carregando...
+        </div>
+      ) : vinculo ? (
+        // ---- JÁ CONECTADO ----
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/50">
+            <Check size={20} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <div>
+              <p className="font-semibold text-emerald-800 dark:text-emerald-300">Telegram conectado ✅</p>
+              <p className="mt-1 text-sm text-emerald-700/80 dark:text-emerald-400/70">
+                Mande áudio, foto de comprovante ou uma mensagem pro bot que eu lanço aqui na sua conta.
+              </p>
+            </div>
+          </div>
+          <a
+            href={BOT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+          >
+            <Send size={16} /> Abrir o bot no Telegram
+          </a>
+          <button
+            onClick={desconectar}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+          >
+            Desconectar
+          </button>
+        </div>
+      ) : (
+        // ---- NÃO CONECTADO ----
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/60">
+            <Send size={20} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Lance seus gastos por <b>áudio</b>, <b>foto do comprovante</b> ou <b>mensagem</b>, direto no Telegram.
+              É rapidinho conectar:
+            </p>
+          </div>
+
+          {!codigo ? (
+            <button
+              onClick={gerar}
+              disabled={gerando}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+            >
+              {gerando ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              Gerar código de conexão
+            </button>
+          ) : (
+            <div className="space-y-4">
+              <ol className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+                <li className="flex gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">1</span>
+                  <span>
+                    Abra o bot{" "}
+                    <a href={BOT_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-emerald-600 underline underline-offset-2 dark:text-emerald-400">
+                      @{BOT_USERNAME}
+                    </a>{" "}
+                    no Telegram.
+                  </span>
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">2</span>
+                  <span>Envie a mensagem abaixo pra ele:</span>
+                </li>
+              </ol>
+
+              <button
+                onClick={copiarComando}
+                title="Toque para copiar"
+                className="flex w-full items-center justify-between gap-2 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 px-4 py-3 text-left transition hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
+              >
+                <span className="font-mono text-lg font-bold tracking-wide text-slate-800 dark:text-slate-100">
+                  /conectar {codigo}
+                </span>
+                <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  {copiado ? <Check size={14} /> : <Copy size={14} />}
+                  {copiado ? "Copiado" : "Copiar"}
+                </span>
+              </button>
+
+              <a
+                href={BOT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+              >
+                <Send size={16} /> Abrir o bot no Telegram
+              </a>
+
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>O código vale por 15 minutos.</span>
+                <button onClick={gerar} disabled={gerando} className="flex items-center gap-1 underline-offset-2 hover:underline disabled:opacity-60">
+                  <RefreshCw size={12} className={gerando ? "animate-spin" : ""} /> Gerar outro
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
 
 export default function App() {
   const [data, setData] = useState(dadosVazios);
@@ -2688,6 +2968,7 @@ export default function App() {
   });
   const [arquivoFoto, setArquivoFoto] = useState(null);
   const [bioDisponivel, setBioDisponivel] = useState(false);
+  const [mostrarTelegram, setMostrarTelegram] = useState(false);
   const dirtyRef = useRef(false);
   const toastTimer = useRef(null);
   const fileRef = useRef(null);
@@ -3211,6 +3492,14 @@ export default function App() {
               <ScanFace size={16} /> {login?.bioCredId ? "Face ID / digital ativo" : "Ativar Face ID / digital"}
             </button>
           )}
+          {userId && (
+            <button
+              onClick={() => setMostrarTelegram(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
+            >
+              <Send size={16} /> Conectar Telegram
+            </button>
+          )}
           <button
             onClick={exportData}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
@@ -3331,6 +3620,11 @@ export default function App() {
                   <ScanFace size={18} />
                 </button>
               )}
+              {userId && (
+                <button onClick={() => setMostrarTelegram(true)} className="rounded-lg p-1.5 text-emerald-600 transition hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950 md:hidden" aria-label="Conectar Telegram" title="Conectar Telegram">
+                  <Send size={18} />
+                </button>
+              )}
               <button onClick={exportData} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 md:hidden" aria-label="Exportar dados">
                 <Download size={18} />
               </button>
@@ -3409,6 +3703,15 @@ export default function App() {
                   }}
                 />
               )}
+              {view === "conta" && (
+                <PaginaConta
+                  login={login}
+                  sessao={sessao}
+                  userId={userId}
+                  onConectarTelegram={() => setMostrarTelegram(true)}
+                  onSair={sair}
+                />
+              )}
             </>
           )}
         </main>
@@ -3452,6 +3755,15 @@ export default function App() {
           file={arquivoFoto}
           onConfirmar={salvarFoto}
           onFechar={() => setArquivoFoto(null)}
+        />
+      )}
+
+      {mostrarTelegram && userId && (
+        <ModalConectarTelegram
+          userId={userId}
+          nome={login?.nome}
+          showToast={showToast}
+          onFechar={() => setMostrarTelegram(false)}
         />
       )}
 
