@@ -98,6 +98,10 @@ const SEED = seedFiles["./dadosPlanilha.json"]?.default ?? { months: {} };
 
 const STORAGE_KEY = "financas_app_data";
 const LOGIN_KEY = "financas_app_login";
+// A trava local (PIN/foto/nome) é POR CONTA: cada usuário da nuvem tem a sua,
+// senão uma conta herda o PIN/foto de outra que já usou este aparelho.
+// Sem sessão (offline), cai na chave antiga (compatibilidade).
+const loginKey = (uid) => (uid ? `${LOGIN_KEY}:${uid}` : LOGIN_KEY);
 const TEMA_KEY = "financas_app_tema";
 const MIGR_KEY = "financas_app_migrado_"; // + userId: marca que já perguntamos da migração
 
@@ -3043,6 +3047,7 @@ export default function App() {
   const [nuvemPronta, setNuvemPronta] = useState(false);
   const ultimoSyncRef = useRef(null);   // último estado que já está na nuvem (base do diff)
   const modoNuvemRef = useRef(false);   // true quando os dados vêm/vão pra nuvem
+  const ultimoUidRef = useRef(null);    // conta cuja trava local já foi resolvida (p/ detectar troca)
   const [escuro, setEscuro] = useState(() => {
     try {
       return localStorage.getItem(TEMA_KEY) === "escuro";
@@ -3079,6 +3084,44 @@ export default function App() {
     return "open";
   }
 
+  // Resolve a trava local (PIN/foto/nome) DA CONTA logada na nuvem e atualiza o
+  // estado `login`. Cada conta tem sua trava (chave por uid). Se a única trava
+  // for a antiga (device-global, sem dono) e o nome bater com o da conta, ela é
+  // adotada por essa conta — preserva o PIN/foto de quem já usava o aparelho,
+  // sem entregá-los a uma conta diferente. O nome exibido segue a nuvem (fonte
+  // da verdade). Troca de conta zera a janela de 1h (re-pede a tranca da nova).
+  async function resolverLogin(sess) {
+    const uid = sess?.user?.id ?? null;
+    const nomeNuvem = (sess?.user?.user_metadata?.nome || "").trim();
+
+    let raw = await storageGet(loginKey(uid));
+    let conf = raw ? JSON.parse(raw) : null;
+
+    if (!conf && uid) {
+      const rawLegado = await storageGet(LOGIN_KEY);
+      const legado = rawLegado ? JSON.parse(rawLegado) : null;
+      const mesmaPessoa =
+        legado?.nome && nomeNuvem &&
+        legado.nome.trim().toLowerCase() === nomeNuvem.toLowerCase();
+      if (legado && mesmaPessoa) {
+        conf = { ...legado, uid };
+        await storageSet(loginKey(uid), JSON.stringify(conf)); // migra p/ a conta
+        await storageSet(LOGIN_KEY, ""); // consome a antiga (não vaza p/ outra conta)
+      }
+    }
+
+    // Trocou de conta neste aparelho → não reaproveita a janela de 1h.
+    if (uid && ultimoUidRef.current && uid !== ultimoUidRef.current) limparDesbloqueio();
+    ultimoUidRef.current = uid;
+
+    // Identidade exibida: PIN/foto vêm da trava desta conta; nome prioriza a nuvem.
+    if (conf?.pinHash) setLogin(nomeNuvem ? { ...conf, nome: nomeNuvem } : conf);
+    else if (nomeNuvem) setLogin({ nome: nomeNuvem, foto: conf?.foto ?? null });
+    else setLogin(conf);
+
+    return conf;
+  }
+
   // Carrega dados salvos ao abrir
   useEffect(() => {
     (async () => {
@@ -3086,10 +3129,7 @@ export default function App() {
         const sess = await sessaoAtual();
         setSessao(sess);
         setUserId(sess?.user?.id ?? null);
-        const rawLogin = await storageGet(LOGIN_KEY);
-        const conf = rawLogin ? JSON.parse(rawLogin) : null;
-        if (conf && conf.pinHash) setLogin(conf);
-        else if (sess?.user?.user_metadata?.nome) setLogin({ nome: sess.user.user_metadata.nome });
+        const conf = await resolverLogin(sess); // trava local DA conta logada
         // Aberto por link de "Esqueci a senha" → tela de senha nova (mesmo
         // que já exista sessão de recuperação, NÃO entrar direto).
         // Sem sessão na nuvem → portão externo (entrar/criar conta).
@@ -3228,8 +3268,9 @@ export default function App() {
   /* ---- login / foto / sair ---- */
   async function criarLogin(nome, pin, pedirSempre, foto) {
     const salt = Math.random().toString(36).slice(2, 12);
-    const conf = { nome, salt, pinHash: await hashPin(pin, salt), pedirSempre, foto: foto || null };
-    await storageSet(LOGIN_KEY, JSON.stringify(conf));
+    const conf = { nome, salt, pinHash: await hashPin(pin, salt), pedirSempre, foto: foto || null, uid: userId };
+    await storageSet(loginKey(userId), JSON.stringify(conf));
+    ultimoUidRef.current = userId;
     setLogin(conf);
     setAuth("open");
     showToast(`Tudo pronto, ${nome}! ✓`);
@@ -3244,7 +3285,7 @@ export default function App() {
 
   async function esqueciPin() {
     if (!window.confirm("Redefinir o PIN? Seus dados financeiros NÃO serão apagados — você só vai criar um novo PIN.")) return;
-    await storageSet(LOGIN_KEY, "");
+    await storageSet(loginKey(userId), "");
     setLogin(null);
     setAuth("setup");
   }
@@ -3276,6 +3317,13 @@ export default function App() {
     if (auth === "open") marcarDesbloqueio();
   }, [auth]);
 
+  // Espelha `auth` num ref, pra o observador da nuvem (deps []) saber se
+  // estamos no portão de login sem virar dependência do efeito.
+  const authRef = useRef(auth);
+  useEffect(() => {
+    authRef.current = auth;
+  }, [auth]);
+
   // Observa login/logout na nuvem (ex.: logo após entrar pela TelaAuth,
   // ou quando a sessão expira/é encerrada em outra aba).
   useEffect(() => {
@@ -3287,14 +3335,21 @@ export default function App() {
       // A restauração da sessão ao abrir (INITIAL_SESSION) e o refresh de token
       // NÃO decidem a tela: quem decide o estado inicial é a carga (com a regra
       // das 24h). Aqui só reagimos a um login FEITO na tela de entrada
-      // (prev === "auth") ou a um logout — assim nada fura a checagem de 24h.
+      // (auth === "auth") ou a um logout — assim nada fura a checagem de 24h.
       if (evento === "INITIAL_SESSION") return;
-      if (!sess) return setAuth("auth");
-      setAuth((prev) => (prev === "auth" ? estadoComSessao(login) : prev));
+      if (!sess) {
+        setLogin(null); // logout → limpa nome/foto na saudação
+        return setAuth("auth");
+      }
+      // Login feito no portão: resolve a trava DESTA conta (nome/foto/PIN certos)
+      // e só então decide entre pedir o PIN (lock) ou abrir.
+      if (authRef.current === "auth") {
+        resolverLogin(sess).then((conf) => setAuth(estadoComSessao(conf)));
+      }
     });
     return parar;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [login]);
+  }, []);
 
   // Ao abrir logado, carrega os dados da NUVEM. No 1º acesso deste aparelho,
   // se houver dados locais ainda não enviados, pergunta se quer subir (migração).
@@ -3356,9 +3411,9 @@ export default function App() {
     if (!login) return;
     try {
       const credId = await registrarBiometria(login.nome);
-      const conf = { ...login, bioCredId: credId };
+      const conf = { ...login, bioCredId: credId, uid: userId };
       setLogin(conf);
-      await storageSet(LOGIN_KEY, JSON.stringify(conf));
+      await storageSet(loginKey(userId), JSON.stringify(conf));
       showToast("Face ID / digital ativado ✓");
     } catch {
       showToast("Não consegui ativar a biometria neste aparelho.", true);
@@ -3367,10 +3422,10 @@ export default function App() {
 
   async function desativarBiometria() {
     if (!login) return;
-    const conf = { ...login };
+    const conf = { ...login, uid: userId };
     delete conf.bioCredId;
     setLogin(conf);
-    await storageSet(LOGIN_KEY, JSON.stringify(conf));
+    await storageSet(loginKey(userId), JSON.stringify(conf));
     showToast("Biometria desativada.");
   }
 
@@ -3387,10 +3442,10 @@ export default function App() {
 
   async function salvarFoto(dataUrl) {
     if (!login) return;
-    const conf = { ...login, foto: dataUrl };
+    const conf = { ...login, foto: dataUrl, uid: userId };
     setLogin(conf);
     setArquivoFoto(null);
-    await storageSet(LOGIN_KEY, JSON.stringify(conf));
+    await storageSet(loginKey(userId), JSON.stringify(conf));
     showToast("Foto atualizada ✓");
   }
 
