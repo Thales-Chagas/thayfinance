@@ -40,6 +40,9 @@ function uuidDeString(str) {
 const idFinal = (oldId) => (ehUuid(oldId) ? oldId : uuidDeString(oldId));
 
 /* ---------- transações: app <-> linha do banco ---------- */
+// FK opcional: o formulário usa "" quando não escolhe cliente/fornecedor/centro,
+// mas a coluna é uuid — string vazia dá erro 22P02 no Postgres. "" → null.
+const fkOuNull = (v) => (v ? v : null);
 function txParaLinha(userId, modo, t) {
   return {
     id: t.id,
@@ -50,10 +53,10 @@ function txParaLinha(userId, modo, t) {
     data: t.data,
     valor: t.valor,
     descricao: t.descricao ?? null,
-    categoria_id: t.categoriaId ?? null,
-    cliente_id: t.clienteId ?? null,
-    fornecedor_id: t.fornecedorId ?? null,
-    centro_custo_id: t.centroCustoId ?? null,
+    categoria_id: fkOuNull(t.categoriaId),
+    cliente_id: fkOuNull(t.clienteId),
+    fornecedor_id: fkOuNull(t.fornecedorId),
+    centro_custo_id: fkOuNull(t.centroCustoId),
     origem: t.origem || "manual",
   };
 }
