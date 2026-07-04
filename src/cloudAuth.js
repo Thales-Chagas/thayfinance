@@ -94,6 +94,19 @@ export async function atualizarSenha(novaSenha) {
   marcarLoginNuvem(); // acabou de entrar pelo link → conta os 24h
 }
 
+// Garante que o nome da pessoa esteja salvo nos metadados da conta na nuvem.
+// Usado p/ contas antigas criadas sem nome: assim a saudação aparece em
+// qualquer aparelho, não só onde existe a trava local. Best-effort (silencioso).
+export async function definirNomeNuvem(nome) {
+  const limpo = (nome || "").trim();
+  if (!limpo) return;
+  try {
+    await supabase.auth.updateUser({ data: { nome: limpo } });
+  } catch {
+    /* sem rede / sem sessão — tenta de novo numa próxima abertura */
+  }
+}
+
 // Encerra a sessão na nuvem (logout de verdade).
 export async function sairNuvem() {
   await supabase.auth.signOut();

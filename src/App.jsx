@@ -71,6 +71,7 @@ import {
   reenviarConfirmacao,
   redefinirSenha,
   atualizarSenha,
+  definirNomeNuvem,
   sairNuvem,
   sessaoAtual,
   aoMudarAuth,
@@ -3100,13 +3101,22 @@ export default function App() {
     if (!conf && uid) {
       const rawLegado = await storageGet(LOGIN_KEY);
       const legado = rawLegado ? JSON.parse(rawLegado) : null;
-      const mesmaPessoa =
-        legado?.nome && nomeNuvem &&
-        legado.nome.trim().toLowerCase() === nomeNuvem.toLowerCase();
-      if (legado && mesmaPessoa) {
-        conf = { ...legado, uid };
-        await storageSet(loginKey(uid), JSON.stringify(conf)); // migra p/ a conta
-        await storageSet(LOGIN_KEY, ""); // consome a antiga (não vaza p/ outra conta)
+      if (legado) {
+        const nomeLegado = (legado.nome || "").trim();
+        // Adota a trava antiga (sem dono) quando o nome bate com o da conta OU
+        // quando a conta ainda não tem nome na nuvem (a trava local é a melhor
+        // identidade). Conta com nome DIFERENTE nunca herda (evita o bug de uma
+        // conta pegar o PIN/foto da outra).
+        const daPessoa =
+          !nomeNuvem || (nomeLegado && nomeLegado.toLowerCase() === nomeNuvem.toLowerCase());
+        if (daPessoa) {
+          conf = { ...legado, uid };
+          await storageSet(loginKey(uid), JSON.stringify(conf)); // migra p/ a conta
+          await storageSet(LOGIN_KEY, ""); // consome a antiga (não vaza p/ outra conta)
+          // Conta sem nome na nuvem → grava o nome lá p/ aparecer em outros
+          // aparelhos também (best-effort, não bloqueia).
+          if (!nomeNuvem && nomeLegado) definirNomeNuvem(nomeLegado);
+        }
       }
     }
 
