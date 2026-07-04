@@ -92,6 +92,27 @@ function contatoDeLinha(r) {
 const nomeParaLinha = (userId, modo, x) => ({ id: x.id, user_id: userId, modo, nome: x.nome });
 const nomeDeLinha = (r) => ({ id: r.id, nome: r.nome });
 
+/* ---------- categorias: além do nome, têm a COR (gradiente escolhido) ---------- */
+const catParaLinha = (userId, modo, c) => ({
+  id: c.id,
+  user_id: userId,
+  modo,
+  nome: c.nome,
+  cor: c.cor ?? null,
+});
+const catDeLinha = (r) => ({ id: r.id, nome: r.nome, ...(r.cor ? { cor: r.cor } : {}) });
+
+// Upsert de categorias TOLERANTE: se a coluna `cor` ainda não existir no banco
+// (migration categoria_cor não rodada), tenta de novo sem a cor — o app segue
+// funcionando e a cor passa a persistir quando a migration rodar.
+async function upsertCategorias(linhas) {
+  let { error } = await supabase.from("categorias").upsert(linhas);
+  if (error && error.code === "PGRST204" && /cor/i.test(error.message || "")) {
+    ({ error } = await supabase.from("categorias").upsert(linhas.map(({ cor: _cor, ...r }) => r)));
+  }
+  return { error };
+}
+
 function metaParaLinha(userId, modo, m) {
   return { id: m.id, user_id: userId, modo, nome: m.nome, alvo: m.alvo ?? 0, atual: m.atual ?? 0 };
 }
@@ -114,7 +135,7 @@ export async function carregarTudo() {
 
   const doModo = (modo) => ({
     transacoes: (tx.data || []).filter((r) => r.modo === modo).map(txDeLinha),
-    categorias: (cat.data || []).filter((r) => r.modo === modo).map(nomeDeLinha),
+    categorias: (cat.data || []).filter((r) => r.modo === modo).map(catDeLinha),
     metas: (met.data || []).filter((r) => r.modo === modo).map(metaDeLinha),
     clientes: (cli.data || []).filter((r) => r.modo === modo).map(contatoDeLinha),
     fornecedores: (forn.data || []).filter((r) => r.modo === modo).map(contatoDeLinha),
@@ -140,7 +161,10 @@ async function remover(tabela, id) {
 export const salvarTransacao = (userId, modo, t) => upsert("transacoes", txParaLinha(userId, modo, t));
 export const excluirTransacao = (id) => remover("transacoes", id);
 
-export const salvarCategoria = (userId, modo, c) => upsert("categorias", nomeParaLinha(userId, modo, c));
+export const salvarCategoria = async (userId, modo, c) => {
+  const { error } = await upsertCategorias([catParaLinha(userId, modo, c)]);
+  if (error) throw error;
+};
 export const excluirCategoria = (id) => remover("categorias", id);
 
 export const salvarMeta = (userId, modo, m) => upsert("metas", metaParaLinha(userId, modo, m));
@@ -241,7 +265,7 @@ export function montarMigracao(userId, data, nuvem) {
         if (existente !== c.id) catReusadas++;
       } else {
         const nid = idFinal(c.id);
-        categorias.push(nomeParaLinha(userId, modo, { ...c, id: nid }));
+        categorias.push(catParaLinha(userId, modo, { ...c, id: nid }));
         catPorNome.set(chaveCat(modo, c.nome), nid); // evita dup no mesmo lote
         fCat.set(c.id, nid);
       }
@@ -283,7 +307,7 @@ export async function migrarLocalParaNuvem(userId, data, nuvem) {
 
   // 1) tabelas "pais" (podem entrar em paralelo)
   const passo1 = [
-    categorias.length && supabase.from("categorias").upsert(categorias),
+    categorias.length && upsertCategorias(categorias),
     clientes.length && supabase.from("clientes").upsert(clientes),
     fornecedores.length && supabase.from("fornecedores").upsert(fornecedores),
     centros.length && supabase.from("centros_custo").upsert(centros),

@@ -47,6 +47,7 @@ import {
   Send,
   Copy,
   RefreshCw,
+  Palette,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -470,6 +471,87 @@ function exportarExcel(nomeArquivo, linhas) {
 }
 
 /* ============================================================
+   CORES DAS CATEGORIAS (gradientes)
+   Cada categoria tem um gradiente: o escolhido pela pessoa (campo `cor`,
+   guardado junto da categoria) ou um SUGERIDO pelo nome — assim até as
+   categorias criadas pelo robô do Telegram ganham cor na hora.
+   ============================================================ */
+
+const GRADIENTES = [
+  { id: "esmeralda", nome: "Esmeralda", de: "#059669", para: "#34d399" },
+  { id: "turquesa", nome: "Turquesa", de: "#0d9488", para: "#2dd4bf" },
+  { id: "oceano", nome: "Oceano", de: "#0284c7", para: "#38bdf8" },
+  { id: "ceu", nome: "Céu", de: "#2563eb", para: "#60a5fa" },
+  { id: "indigo", nome: "Índigo", de: "#4f46e5", para: "#818cf8" },
+  { id: "roxo", nome: "Roxo", de: "#7c3aed", para: "#a78bfa" },
+  { id: "fucsia", nome: "Fúcsia", de: "#c026d3", para: "#e879f9" },
+  { id: "rosa", nome: "Rosa", de: "#db2777", para: "#f472b6" },
+  { id: "vermelho", nome: "Vermelho", de: "#dc2626", para: "#f87171" },
+  { id: "tangerina", nome: "Tangerina", de: "#ea580c", para: "#fb923c" },
+  { id: "ambar", nome: "Âmbar", de: "#d97706", para: "#fbbf24" },
+  { id: "lima", nome: "Lima", de: "#65a30d", para: "#a3e635" },
+  { id: "grafite", nome: "Grafite", de: "#475569", para: "#94a3b8" },
+];
+const gradPorId = (id) => GRADIENTES.find((g) => g.id === id) || null;
+
+// Sugere um gradiente pelo NOME da categoria (palavras-chave, sem acentos).
+// Sem palavra conhecida → hash determinístico (mesmo nome = mesma cor sempre).
+function gradientePorNome(nome) {
+  const n = (nome || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const tem = (...ks) => ks.some((k) => n.includes(k));
+  if (tem("salario", "renda", "faturamento", "venda", "receb", "pagamento", "pix")) return gradPorId("esmeralda");
+  if (tem("invest", "poupanca", "reserva", "aplicacao", "cripto", "acoes")) return gradPorId("turquesa");
+  if (tem("mercado", "supermerc", "feira", "aliment", "comida", "restaur", "lanche", "padaria", "ifood", "pizza", "acougue", "hortifr")) return gradPorId("tangerina");
+  if (tem("saude", "farm", "medic", "hospital", "consulta", "exame", "dentista", "remedio")) return gradPorId("rosa");
+  if (tem("transp", "uber", "combust", "gasolina", "carro", "onibus", "taxi", "99", "metro", "passagem", "pedagio", "estaciona", "moto")) return gradPorId("indigo");
+  if (tem("casa", "moradia", "alug", "condom", "imovel", "reforma", "movel", "moveis")) return gradPorId("ambar");
+  if (tem("agua", "luz", "energia", "internet", "telefone", "celular", "wifi", "gas", "conta")) return gradPorId("ceu");
+  if (tem("lazer", "cinema", "viagem", "festa", "show", "passeio", "streaming", "netflix", "spotify", "jogo")) return gradPorId("roxo");
+  if (tem("educ", "escola", "curso", "faculdade", "livro", "mensalidade")) return gradPorId("oceano");
+  if (tem("roupa", "vestu", "moda", "sapato", "calcad", "beleza", "salao", "cabelo", "estetica", "unha", "manicure")) return gradPorId("fucsia");
+  if (tem("pet", "animal", "veterin", "racao")) return gradPorId("lima");
+  if (tem("imposto", "taxa", "juro", "multa", "tarifa", "divida", "emprestimo", "cartao")) return gradPorId("vermelho");
+  let h = 0;
+  for (let i = 0; i < n.length; i++) h = (Math.imul(31, h) + n.charCodeAt(i)) | 0;
+  return GRADIENTES[Math.abs(h) % GRADIENTES.length];
+}
+
+// Gradiente FINAL de uma categoria: o escolhido (cor) ou o sugerido pelo nome.
+const gradCat = (cat) => gradPorId(cat?.cor) || gradientePorNome(cat?.nome);
+// CSS pronto: linear-gradient do gradiente g
+const cssGrad = (g) => `linear-gradient(135deg, ${g.de}, ${g.para})`;
+
+// Bolinhas de escolha de cor. `valor` = id escolhido (null = automática);
+// `sugestao` = gradiente sugerido pelo nome (mostrado como ativo se nada foi
+// escolhido). Passa onChange(null) ao re-clicar a ativa (volta pra automática).
+function SeletorGradiente({ valor, sugestao, onChange }) {
+  const ativoId = valor || sugestao?.id;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {GRADIENTES.map((g) => {
+        const ativo = ativoId === g.id;
+        return (
+          <button
+            type="button"
+            key={g.id}
+            title={g.nome}
+            aria-label={"Cor " + g.nome}
+            onClick={() => onChange(valor === g.id ? null : g.id)}
+            className={
+              "h-7 w-7 rounded-full transition-transform " +
+              (ativo
+                ? "scale-110 ring-2 ring-slate-700 ring-offset-2 dark:ring-slate-200 dark:ring-offset-slate-900"
+                : "hover:scale-110")
+            }
+            style={{ background: cssGrad(g) }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================
    COMPONENTES BÁSICOS
    ============================================================ */
 
@@ -800,15 +882,19 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onCriarCa
   // Criação de categoria na hora, sem sair do lançamento.
   const [criandoCat, setCriandoCat] = useState(false);
   const [novaCat, setNovaCat] = useState("");
+  const [novaCor, setNovaCor] = useState(null); // null = automática (sugerida pelo nome)
+  const sugestaoCat = gradientePorNome(novaCat); // acompanha o que a pessoa digita
   function confirmarNovaCat() {
     const nome = novaCat.trim();
     if (!nome) {
       setCriandoCat(false);
       return;
     }
-    const cat = onCriarCategoria?.(nome); // salva no login+tipo atuais
+    // guarda a cor resolvida (escolhida ou sugerida) pra ficar estável
+    const cat = onCriarCategoria?.(nome, novaCor || sugestaoCat.id); // salva no login+tipo atuais
     if (cat?.id) set("categoriaId", cat.id); // já seleciona a nova
     setNovaCat("");
+    setNovaCor(null);
     setCriandoCat(false);
   }
 
@@ -842,41 +928,60 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onCriarCa
         </div>
         <Campo label="Categoria">
           {criandoCat ? (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={novaCat}
-                onChange={(e) => setNovaCat(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    confirmarNovaCat();
-                  } else if (e.key === "Escape") {
+            <div className="space-y-2.5 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+              <div className="flex gap-2">
+                {/* pré-visualização ao vivo: a bolinha muda junto com o nome/cor */}
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm"
+                  style={{ background: cssGrad(gradPorId(novaCor) || sugestaoCat) }}
+                >
+                  {(novaCat.trim()[0] || "?").toUpperCase()}
+                </div>
+                <input
+                  type="text"
+                  value={novaCat}
+                  onChange={(e) => setNovaCat(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      confirmarNovaCat();
+                    } else if (e.key === "Escape") {
+                      setNovaCat("");
+                      setNovaCor(null);
+                      setCriandoCat(false);
+                    }
+                  }}
+                  placeholder="Nome da nova categoria"
+                  className={inputCls + " flex-1"}
+                  autoFocus
+                />
+              </div>
+              <SeletorGradiente valor={novaCor} sugestao={sugestaoCat} onChange={setNovaCor} />
+              <p className="text-[11px] text-slate-400">
+                {novaCor
+                  ? `Cor escolhida: ${gradPorId(novaCor)?.nome}`
+                  : `Cor automática pela categoria: ${sugestaoCat.nome} — toque numa bolinha pra trocar`}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={confirmarNovaCat}
+                  className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                >
+                  Salvar categoria
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setNovaCat("");
+                    setNovaCor(null);
                     setCriandoCat(false);
-                  }
-                }}
-                placeholder="Nome da nova categoria"
-                className={inputCls + " flex-1"}
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={confirmarNovaCat}
-                className="rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700"
-              >
-                Salvar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNovaCat("");
-                  setCriandoCat(false);
-                }}
-                className="rounded-xl border border-slate-200 px-3 text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-              >
-                Cancelar
-              </button>
+                  }}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex gap-2">
@@ -1745,8 +1850,12 @@ function PaginaMetas({ espaco, atualizar }) {
 
 function PaginaCategorias({ espaco, atualizar, avisar }) {
   const [nova, setNova] = useState("");
+  const [novaCor, setNovaCor] = useState(null); // null = automática pelo nome
   const [editando, setEditando] = useState(null); // {id, nome}
+  const [corAberta, setCorAberta] = useState(null); // id da categoria com a paleta aberta
+  const sugestao = gradientePorNome(nova);
   const usos = (id) => espaco.transacoes.filter((t) => t.categoriaId === id).length;
+  const totalDe = (id) => soma(espaco.transacoes.filter((t) => t.categoriaId === id));
 
   function adicionar(e) {
     e.preventDefault();
@@ -1754,74 +1863,156 @@ function PaginaCategorias({ espaco, atualizar, avisar }) {
     if (!nome) return;
     if (espaco.categorias.some((c) => c.nome.toLowerCase() === nome.toLowerCase()))
       return avisar("Essa categoria já existe.", true);
-    atualizar((esp) => ({ ...esp, categorias: [...esp.categorias, { id: uid(), nome }] }));
+    atualizar((esp) => ({
+      ...esp,
+      categorias: [...esp.categorias, { id: uid(), nome, cor: novaCor || sugestao.id }],
+    }));
     setNova("");
+    setNovaCor(null);
+  }
+
+  function trocarCor(id, cor) {
+    atualizar((esp) => ({
+      ...esp,
+      categorias: esp.categorias.map((x) => (x.id === id ? { ...x, cor } : x)),
+    }));
+    setCorAberta(null);
   }
 
   return (
     <div className="space-y-4">
+      {/* --- criador: preview ao vivo + nome + cor --- */}
       <Card>
-        <form onSubmit={adicionar} className="flex gap-2">
-          <input
-            type="text"
-            value={nova}
-            onChange={(e) => setNova(e.target.value)}
-            placeholder="Nome da nova categoria"
-            className={inputCls + " flex-1"}
-          />
-          <BotaoPrimario>
-            <Plus size={16} /> Criar
-          </BotaoPrimario>
+        <form onSubmit={adicionar} className="space-y-3">
+          <div className="flex gap-2.5">
+            <div
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white shadow-sm transition-all"
+              style={{ background: cssGrad(gradPorId(novaCor) || sugestao) }}
+            >
+              {(nova.trim()[0] || "+").toUpperCase()}
+            </div>
+            <input
+              type="text"
+              value={nova}
+              onChange={(e) => setNova(e.target.value)}
+              placeholder="Nome da nova categoria (ex.: Mercado, Lazer, Salário...)"
+              className={inputCls + " flex-1"}
+            />
+            <BotaoPrimario>
+              <Plus size={16} /> Criar
+            </BotaoPrimario>
+          </div>
+          <SeletorGradiente valor={novaCor} sugestao={sugestao} onChange={setNovaCor} />
+          <p className="text-[11px] text-slate-400">
+            {novaCor
+              ? `Cor escolhida: ${gradPorId(novaCor)?.nome}`
+              : nova.trim()
+                ? `Cor automática pela categoria: ${sugestao.nome} — toque numa bolinha pra trocar`
+                : "A cor é escolhida sozinha pelo nome — ou toque numa bolinha pra definir"}
+          </p>
         </form>
       </Card>
-      <Card>
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {espaco.categorias.map((c) => (
-            <div key={c.id} className="flex items-center gap-2 py-2.5">
-              {editando?.id === c.id ? (
-                <input
-                  type="text"
-                  value={editando.nome}
-                  onChange={(e) => setEditando({ ...editando, nome: e.target.value })}
-                  onBlur={() => {
-                    const nome = editando.nome.trim();
-                    if (nome)
-                      atualizar((esp) => ({
-                        ...esp,
-                        categorias: esp.categorias.map((x) => (x.id === c.id ? { ...x, nome } : x)),
-                      }));
-                    setEditando(null);
-                  }}
-                  onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-                  className={inputCls + " flex-1"}
-                  autoFocus
-                />
-              ) : (
-                <>
-                  <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">{c.nome}</span>
-                  <span className="text-xs text-slate-400">
-                    {usos(c.id)} lançamento{usos(c.id) !== 1 ? "s" : ""}
-                  </span>
-                </>
-              )}
-              <button onClick={() => setEditando({ id: c.id, nome: c.nome })} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Renomear">
-                <Pencil size={14} />
-              </button>
-              <button
-                onClick={() => {
-                  if (usos(c.id) > 0)
-                    return avisar("Essa categoria tem lançamentos. Mova-os antes de excluir.", true);
-                  atualizar((esp) => ({ ...esp, categorias: esp.categorias.filter((x) => x.id !== c.id) }));
-                }}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
-                aria-label="Excluir"
+
+      {/* --- grade de categorias --- */}
+      {espaco.categorias.length === 0 ? (
+        <Card>
+          <p className="py-8 text-center text-sm text-slate-400">
+            Nenhuma categoria ainda. Crie a primeira aí em cima! 🏷️
+          </p>
+        </Card>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {espaco.categorias.map((c) => {
+            const g = gradCat(c);
+            const n = usos(c.id);
+            return (
+              <div
+                key={c.id}
+                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900"
               >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+                {/* filete gradiente no topo */}
+                <div className="absolute inset-x-0 top-0 h-1" style={{ background: cssGrad(g) }} />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCorAberta(corAberta === c.id ? null : c.id)}
+                    title="Trocar cor"
+                    aria-label={"Trocar cor de " + c.nome}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white shadow-sm transition hover:scale-105"
+                    style={{ background: cssGrad(g) }}
+                  >
+                    {c.nome.trim()[0]?.toUpperCase() || "?"}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    {editando?.id === c.id ? (
+                      <input
+                        type="text"
+                        value={editando.nome}
+                        onChange={(e) => setEditando({ ...editando, nome: e.target.value })}
+                        onBlur={() => {
+                          const nome = editando.nome.trim();
+                          if (nome)
+                            atualizar((esp) => ({
+                              ...esp,
+                              categorias: esp.categorias.map((x) => (x.id === c.id ? { ...x, nome } : x)),
+                            }));
+                          setEditando(null);
+                        }}
+                        onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                        className={inputCls + " !py-1.5 w-full"}
+                        autoFocus
+                      />
+                    ) : (
+                      <>
+                        <p className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">{c.nome}</p>
+                        <p className="text-xs text-slate-400">
+                          {n} lançamento{n !== 1 ? "s" : ""}
+                          {n > 0 && <> · {fmtBRL(totalDe(c.id))}</>}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-0.5 opacity-60 transition group-hover:opacity-100">
+                    <button
+                      onClick={() => setCorAberta(corAberta === c.id ? null : c.id)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                      aria-label="Trocar cor"
+                      title="Trocar cor"
+                    >
+                      <Palette size={14} />
+                    </button>
+                    <button
+                      onClick={() => setEditando({ id: c.id, nome: c.nome })}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                      aria-label="Renomear"
+                      title="Renomear"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (usos(c.id) > 0)
+                          return avisar("Essa categoria tem lançamentos. Mova-os antes de excluir.", true);
+                        atualizar((esp) => ({ ...esp, categorias: esp.categorias.filter((x) => x.id !== c.id) }));
+                      }}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                      aria-label="Excluir"
+                      title="Excluir"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+                {corAberta === c.id && (
+                  <div className="mt-3 rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
+                    <SeletorGradiente valor={c.cor} sugestao={gradientePorNome(c.nome)} onChange={(cor) => trocarCor(c.id, cor || gradientePorNome(c.nome).id)} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      </Card>
+      )}
     </div>
   );
 }
@@ -3274,16 +3465,16 @@ export default function App() {
         transacoes: esp.transacoes.map((x) => (x.id === id ? { ...x, status: "ok" } : x)),
       })),
     // Cria uma categoria no espaço ATUAL (modo pessoal/empresarial vigente) e
-    // devolve o objeto {id,nome}. Fica salva só neste login (via user_id na
+    // devolve o objeto {id,nome,cor}. Fica salva só neste login (via user_id na
     // nuvem) e só neste tipo (coluna modo). Se já existir pelo nome, reaproveita.
-    criarCategoria: (nome) => {
+    criarCategoria: (nome, cor) => {
       const limpo = (nome || "").trim();
       if (!limpo) return null;
       const existente = data[modo].categorias.find(
         (c) => c.nome.toLowerCase() === limpo.toLowerCase(),
       );
       if (existente) return existente;
-      const nova = { id: uid(), nome: limpo };
+      const nova = { id: uid(), nome: limpo, cor: cor || gradientePorNome(limpo).id };
       atualizarEspaco((esp) => ({ ...esp, categorias: [...esp.categorias, nova] }));
       return nova;
     },
