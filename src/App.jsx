@@ -414,11 +414,22 @@ async function hashPin(pin, salt) {
    EXPORTAÇÕES (PDF via impressão / Excel via CSV)
    ============================================================ */
 
+// Escapa texto para inserir com segurança dentro de HTML. Usado na exportação
+// de PDF (document.write numa janela do MESMO domínio): sem isso, um nome de
+// categoria/descrição com "<img onerror=...>" viraria JS rodando no app.
+function escHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function exportarPDF(titulo, corpoHtml) {
   const w = window.open("", "_blank");
   if (!w) return false;
   w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<title>${titulo}</title>
+<title>${escHtml(titulo)}</title>
 <style>
   body { font-family: Arial, Helvetica, sans-serif; color: #1e293b; padding: 24px; }
   h1 { font-size: 20px; margin: 0 0 2px; } h2 { font-size: 14px; margin: 18px 0 6px; }
@@ -434,11 +445,20 @@ function exportarPDF(titulo, corpoHtml) {
   return true;
 }
 
+// Evita "CSV formula injection": uma célula começando com = + @ (ou tab/CR)
+// pode virar fórmula ao abrir no Excel. Prefixa com ' pra forçar texto.
+// Números negativos ("-1.234,56") são preservados (- seguido de dígito).
+function protegerCsv(v) {
+  let s = String(v ?? "");
+  if (/^[=+@\t\r]/.test(s) || /^-(?!\d)/.test(s)) s = "'" + s;
+  return s;
+}
+
 function exportarExcel(nomeArquivo, linhas) {
   const csv =
     "﻿" +
     linhas
-      .map((l) => l.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";"))
+      .map((l) => l.map((c) => `"${protegerCsv(c).replace(/"/g, '""')}"`).join(";"))
       .join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -1950,9 +1970,9 @@ function PaginaRelatorios({ espaco, empresarial, ano, mesIdx, nomeApp }) {
   const totAnualDesp = anual.reduce((a, m) => a + m.desp, 0);
 
   function htmlTabela(cabecalho, linhas, totalLinha) {
-    return `<table><thead><tr>${cabecalho.map((c, i) => `<th class="${i > 0 ? "num" : ""}">${c}</th>`).join("")}</tr></thead><tbody>${linhas
-      .map((l) => `<tr>${l.map((c, i) => `<td class="${i > 0 ? "num" : ""}">${c}</td>`).join("")}</tr>`)
-      .join("")}${totalLinha ? `<tr class="total">${totalLinha.map((c, i) => `<td class="${i > 0 ? "num" : ""}">${c}</td>`).join("")}</tr>` : ""}</tbody></table>`;
+    return `<table><thead><tr>${cabecalho.map((c, i) => `<th class="${i > 0 ? "num" : ""}">${escHtml(c)}</th>`).join("")}</tr></thead><tbody>${linhas
+      .map((l) => `<tr>${l.map((c, i) => `<td class="${i > 0 ? "num" : ""}">${escHtml(c)}</td>`).join("")}</tr>`)
+      .join("")}${totalLinha ? `<tr class="total">${totalLinha.map((c, i) => `<td class="${i > 0 ? "num" : ""}">${escHtml(c)}</td>`).join("")}</tr>` : ""}</tbody></table>`;
   }
 
   function exportar(formato) {
