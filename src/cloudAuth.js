@@ -10,6 +10,12 @@
 
 import { supabase } from "./supabaseClient";
 
+// Endereço-base do app para onde os links dos e-mails devem voltar.
+// import.meta.env.BASE_URL é "/thayfinance/" na produção (GitHub Pages) e "/"
+// no computador — então isto sempre aponta pra RAIZ CERTA do app, sem depender
+// da "Site URL" do painel do Supabase e sem herdar uma sub-rota da página atual.
+const appUrl = () => window.location.origin + import.meta.env.BASE_URL;
+
 // Marca de tempo do ÚLTIMO login real na nuvem (e-mail/senha). Serve para o
 // app repedir o login a cada 24h, mesmo com a sessão do Supabase persistida.
 const LOGIN_NUVEM_KEY = "financas_app_login_nuvem";
@@ -42,7 +48,7 @@ export async function cadastrar(email, senha, nome) {
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),
     password: senha,
-    options: { data: { nome: (nome || "").trim() } },
+    options: { data: { nome: (nome || "").trim() }, emailRedirectTo: appUrl() },
   });
   if (error) throw error;
   // Com confirmação de e-mail ligada, a sessão só existe após confirmar.
@@ -63,7 +69,11 @@ export async function entrar(email, senha) {
 
 // Reenvia o e-mail de confirmação (caso não tenha chegado).
 export async function reenviarConfirmacao(email) {
-  const { error } = await supabase.auth.resend({ type: "signup", email: email.trim() });
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: email.trim(),
+    options: { emailRedirectTo: appUrl() },
+  });
   if (error) throw error;
 }
 
@@ -71,8 +81,7 @@ export async function reenviarConfirmacao(email) {
 // redirectTo faz o link do e-mail voltar para ESTE app (localhost no dev,
 // GitHub Pages na produção) — precisa estar na lista de Redirect URLs do painel.
 export async function redefinirSenha(email) {
-  const redirectTo = window.location.origin + window.location.pathname;
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: appUrl() });
   if (error) throw error;
 }
 
