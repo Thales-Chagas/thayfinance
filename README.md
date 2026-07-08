@@ -17,6 +17,8 @@ Um app web (PWA) que organiza **duas contas em um só lugar** — a sua vida pes
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white&style=flat-square)
 ![Supabase](https://img.shields.io/badge/Supabase-Backend-3ECF8E?logo=supabase&logoColor=white&style=flat-square)
 ![PWA](https://img.shields.io/badge/PWA-instalável-5A0FC8?logo=pwa&logoColor=white&style=flat-square)
+![Segurança](https://img.shields.io/badge/Segurança-RLS_por_usuário-059669?logo=letsencrypt&logoColor=white&style=flat-square)
+![HTTPS](https://img.shields.io/badge/HTTPS-obrigatório-2ea44f?logo=letsencrypt&logoColor=white&style=flat-square)
 
 </div>
 
@@ -126,11 +128,20 @@ Cada `git push` na branch **`main`** publica automaticamente via **GitHub Action
 
 ## 🛡️ Segurança & privacidade
 
-- **Isolamento total entre contas** — RLS (`auth.uid() = user_id`) em todas as tabelas
-- **Comprovantes em cofre privado** — Storage separado por pasta de cada usuário
-- **Funções sensíveis protegidas** — cada Edge Function exige seu próprio segredo/autenticação
-- **Sem dados reais no repositório** — os lançamentos ficam fora do Git, só no seu aparelho e na sua nuvem
-- Escape de HTML na exportação de PDF e proteção contra injeção de fórmula no CSV
+> **A segurança dos seus dados é a prioridade número um do Thayfinance.** Dinheiro é assunto sério, e por isso cada camada do app foi pensada para que **só você** tenha acesso à sua vida financeira — nem mesmo outra pessoa com uma conta no app consegue chegar perto dos seus dados.
+
+O app passa por **revisões de segurança e testes de invasão (pentests) periódicos**. Estas são as proteções em vigor:
+
+- 🔐 **Isolamento total entre contas** — *Row Level Security* (`auth.uid() = user_id`) em **todas** as tabelas do banco. No nível do banco de dados, é impossível um usuário ler ou alterar os dados de outro.
+- 🗄️ **Comprovantes em cofre privado** — armazenamento separado por pasta de cada usuário, sem acesso público.
+- ⚡ **Funções sensíveis blindadas** — cada Edge Function exige autenticação real ou um segredo próprio; chamadas anônimas são recusadas (verificado por teste real → `401`).
+- 🔑 **Nenhum segredo no código** — apenas a chave *publishable* (pública por natureza e inofensiva sozinha) fica no app; toda credencial real vive só no servidor, jamais no repositório.
+- 🧹 **Sem dados reais versionados** — os seus lançamentos nunca entram no Git; ficam apenas no seu aparelho e na sua nuvem privada.
+- 🔒 **HTTPS obrigatório** e **trava local por PIN** — proteção do transporte e do aparelho.
+- 🛟 **Backup automático** a cada 3 dias, para você nunca perder nada.
+- 🧯 **Defesas contra ataques comuns** — escape de HTML na exportação em PDF e proteção contra injeção de fórmula no CSV.
+
+_Encontrou algo? Relate de forma responsável — vulnerabilidades são levadas a sério e corrigidas com prioridade._
 
 ---
 
