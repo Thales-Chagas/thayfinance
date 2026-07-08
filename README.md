@@ -5,7 +5,7 @@ PRECIFICAÇÃO.xlsx e CONTROLE DIARIO.xlsx.
 
 ## App publicado (instalável)
 
-**https://thales-chagas.github.io/thayfinance/**
+**https://www.thayfinance.com**
 
 É um PWA: pode ser instalado no Android (Chrome → menu ⋮ → "Instalar app"),
 no iPhone (Safari → Compartilhar → "Adicionar à Tela de Início") e no
