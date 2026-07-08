@@ -8,6 +8,11 @@ src/dadosPlanilha.json
 # Arquivos temporários do Supabase CLI (estado local)
 supabase/.temp/
 
+# Segredos em variáveis de ambiente — nunca publicar
+.env
+.env.*
+*.env
+
 # Guia local do bot do Telegram — contém segredos (TELEGRAM_SECRET). Nunca publicar.
 PASSO-A-PASSO-TELEGRAM.md
 

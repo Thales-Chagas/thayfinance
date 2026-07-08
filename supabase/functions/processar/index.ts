@@ -8,9 +8,32 @@
 //  Segredos: ANTHROPIC_API_KEY, OPENAI_API_KEY
 // ============================================================
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
+
+// SUPABASE_URL e SUPABASE_ANON_KEY são injetados automaticamente pela plataforma.
+// Este cliente é usado SÓ para validar o usuário logado (getUser) — não lê dados.
+const authClient = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_ANON_KEY")!,
+  { auth: { persistSession: false, autoRefreshToken: false } },
+);
+
+// Limite de uso por usuário (anti-abuso de custo de IA). Em memória do isolate:
+// não é perfeito num ambiente serverless, mas é uma trava a mais além do login.
+const ACESSOS = new Map<string, number[]>();
+const LIMITE = 30; // requisições
+const JANELA = 60_000; // por 60s
+function dentroDoLimite(id: string): boolean {
+  const agora = Date.now();
+  const lista = (ACESSOS.get(id) || []).filter((t) => agora - t < JANELA);
+  lista.push(agora);
+  ACESSOS.set(id, lista);
+  return lista.length <= LIMITE;
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -119,6 +142,14 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ erro: "use POST" }, 405);
 
+  // 🔒 Exige um usuário REAL logado. A chave pública (anon/publishable) fica
+  // visível no app e, sozinha, passa no verify_jwt — mas aqui NÃO basta: quem
+  // não tem sessão de usuário não gasta as APIs de IA. Fecha o abuso de custo.
+  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  const { data: { user }, error: eAuth } = await authClient.auth.getUser(token);
+  if (eAuth || !user) return json({ erro: "faça login para usar a IA" }, 401);
+  if (!dentroDoLimite(user.id)) return json({ erro: "muitas requisições — tente em instantes" }, 429);
+
   try {
     const { kind, base64, mime } = await req.json();
     if (!base64 || !kind) return json({ erro: "faltou kind ou base64" }, 400);
@@ -143,6 +174,6 @@ Deno.serve(async (req) => {
     return json({ erro: "kind inválido (use 'foto' ou 'audio')" }, 400);
   } catch (e) {
     console.error("erro:", e);
-    return json({ ok: false, erro: String(e) }, 500);
+    return json({ ok: false, erro: "erro ao processar" }, 500);
   }
 });
