@@ -1,51 +1,144 @@
-# Thayfinance — Controle financeiro
+<div align="center">
 
-Aplicativo web financeiro com 6 módulos, baseado nas planilhas CUSTOS.xlsx,
-PRECIFICAÇÃO.xlsx e CONTROLE DIARIO.xlsx.
+# 💚 Thayfinance
 
-## App publicado (instalável)
+### Controle financeiro pessoal e empresarial — simples, bonito e no seu bolso.
 
-**https://www.thayfinance.com**
+Um app web (PWA) que organiza **duas contas em um só lugar** — a sua vida pessoal e a do seu negócio — com lançamentos, metas, relatórios e até **IA que lê comprovantes por foto ou áudio**.
 
-É um PWA: pode ser instalado no Android (Chrome → menu ⋮ → "Instalar app"),
-no iPhone (Safari → Compartilhar → "Adicionar à Tela de Início") e no
-computador (ícone de instalar na barra de endereço do Chrome/Edge).
-Funciona offline depois da primeira visita.
+<br>
 
-A versão publicada abre **sem dados** (por privacidade, o arquivo
-`src/dadosPlanilha.json` fica fora do repositório). Em cada aparelho, use
-**Importar dados** com o arquivo `meus-dados-thayfinance.json` (na Área de
-Trabalho) para carregar os lançamentos das planilhas. Os dados ficam só no
-aparelho; para levar de um aparelho a outro, use Exportar → Importar.
+[![Acessar o app](https://img.shields.io/badge/▶_Acessar_o_app-www.thayfinance.com-059669?style=for-the-badge&labelColor=065f46)](https://www.thayfinance.com)
 
-Cada `git push` na branch `main` publica automaticamente (GitHub Actions).
+<br>
 
-## Como usar (desenvolvimento)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white&style=flat-square)
+![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white&style=flat-square)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white&style=flat-square)
+![Supabase](https://img.shields.io/badge/Supabase-Backend-3ECF8E?logo=supabase&logoColor=white&style=flat-square)
+![PWA](https://img.shields.io/badge/PWA-instalável-5A0FC8?logo=pwa&logoColor=white&style=flat-square)
 
-```bash
-npm install   # apenas na primeira vez
-npm run dev   # abre em http://localhost:5173
+</div>
+
+---
+
+## ✨ O que é
+
+O **Thayfinance** nasceu de três planilhas de Excel e virou um aplicativo completo de controle financeiro. Ele funciona **instalado no celular ou no computador**, roda **offline** e **sincroniza na nuvem** com segurança — cada pessoa enxerga apenas os próprios dados.
+
+O grande diferencial: você alterna entre **dois ambientes** com um toque —
+
+| 👤 **Pessoal** | 🏢 **Empresarial** |
+|:--|:--|
+| Suas receitas, despesas e metas do dia a dia | Faturamento, custos, clientes, fornecedores e centro de custos |
+
+---
+
+## 🚀 Funcionalidades
+
+### 📊 Gestão do dia a dia
+- **Dashboard** com cards de resumo e gráficos (faturamento × despesas, distribuição por categoria)
+- **Receitas & Despesas** com data, categoria, valor, descrição e status
+- **Contas a Pagar/Receber** com alertas de vencimento
+- **Fluxo de Caixa** por dia, semana, mês e ano
+- **Metas** em cards com anel de progresso
+- **Categorias** coloridas, com gradientes personalizados
+- **Relatórios** mensais e anuais, com exportação em **PDF** e **Excel (CSV)**
+
+### 🏢 Exclusivo do modo empresarial
+- **Clientes** e **Fornecedores**
+- **Centro de Custos** e apuração de lucro operacional
+
+### 🤖 Lançamento por Inteligência Artificial
+- 📷 **Foto do comprovante** → a IA lê valor, data e estabelecimento e já lança
+- 🎙️ **Áudio** → você fala "gastei 50 no mercado" e ela transforma em lançamento
+- 💬 **Bot do Telegram** → mande foto, áudio ou texto e o gasto entra sozinho na sua conta
+
+### 🔒 Conta, nuvem e privacidade
+- **Login na nuvem** (e-mail e senha) com sincronização automática entre aparelhos
+- **Trava local** por PIN, foto e nome — só sua, direto no aparelho
+- **Backup automático** a cada 3 dias, além do backup manual (Exportar / Importar)
+- **Modo escuro** 🌙 e instalação como app (PWA)
+
+---
+
+## 🛠️ Tecnologias
+
+<table>
+<tr>
+<td valign="top" width="50%">
+
+**Frontend**
+- ⚛️ React 18 + Vite 6
+- 🎨 Tailwind CSS v4
+- 📈 Recharts (gráficos)
+- 🧩 Lucide (ícones)
+- 📱 vite-plugin-pwa (offline + instalável)
+
+</td>
+<td valign="top" width="50%">
+
+**Backend & IA**
+- 🟢 Supabase (Auth · Postgres · Storage)
+- 🔐 Row Level Security por usuário
+- ⚡ Edge Functions (Deno)
+- 🧠 Claude (visão) + OpenAI Whisper (áudio)
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🧱 Arquitetura
+
+```
+┌──────────────────────────┐        ┌───────────────────────────────┐
+│      Thayfinance (PWA)    │        │            Supabase           │
+│  React · Tailwind · Vite  │  ⇄     │  Auth · Postgres (RLS) ·      │
+│  Funciona offline         │        │  Storage privado · Edge Fns   │
+└──────────────────────────┘        └───────────────┬───────────────┘
+            ▲                                        │
+            │ instalável no celular/PC               ▼
+     www.thayfinance.com                   🤖 IA (Claude · Whisper)
+                                           💬 Bot do Telegram
 ```
 
-Para gerar a versão final (pasta `dist/`): `npm run build`.
+> Todo o app da interface vive num único arquivo — [`src/App.jsx`](src/App.jsx) — por escolha de projeto.
 
-## Módulos
+---
 
-- **Dashboard** — cards de resumo, gráfico Faturamento × Custos (6 meses),
-  pizza de distribuição de custos, indicadores estratégicos e alertas automáticos.
-- **DRE — Resultado** — demonstrativo mensal com percentuais sobre o faturamento.
-- **Custos do Negócio** — custos fixos, variáveis e anuais (÷12),
-  com botão "Copiar do mês anterior".
-- **Gastos Pessoais** — os 35 itens da planilha pessoal, com total automático.
-- **Precificação** — custo por hora, valor mínimo por sessão e tabela de preços
-  com custo, margem e lucro de cada serviço.
-- **Planejamento 2026** — metas × realizado acumulado, com barras de progresso.
+## 💻 Rodando localmente
 
-## Conta e privacidade
+```bash
+npm install     # só na primeira vez
+npm run dev      # abre em http://localhost:5173
+npm run build    # gera a versão final na pasta dist/
+```
 
-- Primeiro uso: cria nome, foto (opcional) e PIN — tudo guardado só no aparelho.
-- Conta nova começa 100% zerada; botão Sair bloqueia o app na tela de PIN.
-- Dados salvos automaticamente (chave `financas_app_data`), com modo escuro
-  opcional e backup manual por Exportar/Importar dados.
+---
 
-Todo o código do app está em um único arquivo: `src/App.jsx`.
+## 🌐 Publicação
+
+Cada `git push` na branch **`main`** publica automaticamente via **GitHub Actions** → **GitHub Pages**, no domínio próprio **[www.thayfinance.com](https://www.thayfinance.com)** (com HTTPS).
+
+---
+
+## 🛡️ Segurança & privacidade
+
+- **Isolamento total entre contas** — RLS (`auth.uid() = user_id`) em todas as tabelas
+- **Comprovantes em cofre privado** — Storage separado por pasta de cada usuário
+- **Funções sensíveis protegidas** — cada Edge Function exige seu próprio segredo/autenticação
+- **Sem dados reais no repositório** — os lançamentos ficam fora do Git, só no seu aparelho e na sua nuvem
+- Escape de HTML na exportação de PDF e proteção contra injeção de fórmula no CSV
+
+---
+
+<div align="center">
+<br>
+
+Feito com 💚 para organizar a vida financeira de um jeito leve.
+
+**[www.thayfinance.com](https://www.thayfinance.com)**
+
+</div>
