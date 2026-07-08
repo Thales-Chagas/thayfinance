@@ -4,8 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  // No GitHub Pages o app fica em /thayfinance/; no computador, na raiz
-  base: process.env.GITHUB_ACTIONS ? "/thayfinance/" : "/",
+  // Com domínio próprio (www.thayfinance.com) o app mora na raiz, igual no PC.
+  base: "/",
   plugins: [
     react(),
     tailwindcss(),
