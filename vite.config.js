@@ -11,6 +11,13 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
+      // service worker próprio (src/sw.js): precache + notificações push
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
+      },
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
         name: "Thayfinance",

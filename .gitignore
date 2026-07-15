@@ -19,5 +19,8 @@ PASSO-A-PASSO-TELEGRAM.md
 # Guia local do backup automático — contém segredo (BACKUP_SECRET). Nunca publicar.
 PASSO-A-PASSO-BACKUP.md
 
+# Guia local das notificações push — contém segredo (NOTIFY_SECRET). Nunca publicar.
+PASSO-A-PASSO-NOTIFICACOES.md
+
 # Configura��o local do Claude Code
 .claude/

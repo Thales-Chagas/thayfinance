@@ -14,3 +14,8 @@ verify_jwt = false
 # A própria função valida o header X-Backup-Secret.
 [functions.backup]
 verify_jwt = false
+
+# Notificações push (chamada pelo agendador pg_cron, sem login Supabase).
+# A própria função valida o header X-Notify-Secret.
+[functions.notificar]
+verify_jwt = false

@@ -54,6 +54,8 @@ import {
   EllipsisVertical,
   Lightbulb,
   CircleCheck,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -87,6 +89,7 @@ import {
 } from "./cloudAuth";
 import { carregarTudo, sincronizar, migrarLocalParaNuvem } from "./cloudData";
 import { gerarCodigoTelegram, statusTelegram, desconectarTelegram, BOT_URL, BOT_USERNAME } from "./telegramLink";
+import { suportePush, assinaturaAtual, ativarPush, desativarPush } from "./push";
 import {
   temAutenticadorPlataforma,
   registrarBiometria,
@@ -3086,6 +3089,90 @@ const NAV_EMPRESA = [
 // Aba "Minha Conta": mostra quem está logado, ONDE os dados ficam (nuvem x
 // aparelho) e o status do Telegram. Ajuda a entender por que o saldo pode
 // parecer diferente entre o computador e o celular.
+// Cartão de notificações push da aba Conta: liga/desliga neste aparelho.
+function CartaoNotificacoes({ userId, showToast }) {
+  const suporte = suportePush();
+  const [ativa, setAtiva] = useState(undefined); // undefined=carregando
+  const [ocupado, setOcupado] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    assinaturaAtual()
+      .then((s) => vivo && setAtiva(!!s))
+      .catch(() => vivo && setAtiva(false));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  async function alternar() {
+    if (ocupado) return;
+    setOcupado(true);
+    try {
+      if (ativa) {
+        await desativarPush();
+        setAtiva(false);
+        showToast?.("Notificações desligadas neste aparelho.");
+      } else {
+        await ativarPush(userId);
+        setAtiva(true);
+        showToast?.("Notificações ativadas! 🔔");
+      }
+    } catch (e) {
+      showToast?.(e.message || "Não deu certo. Tente de novo.", true, 6000);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  const descricao =
+    suporte === "ios-precisa-instalar"
+      ? "No iPhone, primeiro instale o app na tela de início (veja em Dicas do app)."
+      : suporte === "bloqueado"
+        ? "As notificações estão bloqueadas nas configurações do navegador."
+        : suporte === "sem-suporte"
+          ? "Este navegador não aceita notificações."
+          : ativa === undefined
+            ? "Verificando..."
+            : ativa
+              ? "Ativas neste aparelho ✅ — contas a vencer e lembrete de anotar os gastos."
+              : "Avisa das contas a vencer e, de tempos em tempos, lembra de anotar os gastos.";
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">
+            Notificações no celular
+          </h3>
+          <p className="mt-0.5 text-sm text-slate-400">{descricao}</p>
+        </div>
+        {suporte === "ok" && ativa !== undefined && (
+          <button
+            onClick={alternar}
+            disabled={ocupado}
+            className={
+              "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition disabled:opacity-50 " +
+              (ativa
+                ? "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950")
+            }
+          >
+            {ocupado ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : ativa ? (
+              <BellOff size={15} />
+            ) : (
+              <Bell size={15} />
+            )}
+            {ativa ? "Desativar" : "Ativar"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimparDados, onSair, showToast, onVerTour }) {
   const email = sessao?.user?.email || null;
   const naNuvem = !!sessao;
@@ -3192,6 +3279,9 @@ function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimparDados,
           )}
         </div>
       </div>
+
+      {/* Notificações push — só faz sentido logado na nuvem */}
+      {userId && <CartaoNotificacoes userId={userId} showToast={showToast} />}
 
       {/* Explicação do saldo diferente entre aparelhos */}
       <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
