@@ -2063,52 +2063,65 @@ function PaginaContas({ espaco, empresarial, acoes }) {
     const grad = cat ? gradCat(cat) : gradPorId("grafite");
     const venc = rotuloVencimento(t);
     const nome = t.descricao || catNome(t.categoriaId);
+    // Ações e valor aparecem DUAS vezes (celular embaixo, desktop na direita) —
+    // uma some com hidden conforme o tamanho da tela.
+    const acoesLinha = (
+      <>
+        <button
+          onClick={() => acoes.marcarOk(t.id)}
+          title={t.tipo === "receita" ? "Marcar como recebido" : "Marcar como pago"}
+          className="flex items-center gap-1 rounded-lg border border-emerald-200 px-2 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950"
+        >
+          <Check size={13} />
+          <span className="sm:inline">{t.tipo === "receita" ? "Recebi" : "Paguei"}</span>
+        </button>
+        <button
+          onClick={() => setForm(t)}
+          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+          aria-label="Editar"
+        >
+          <Pencil size={15} />
+        </button>
+        <button
+          onClick={() => setExcluindo(t)}
+          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+          aria-label="Excluir"
+        >
+          <Trash2 size={15} />
+        </button>
+      </>
+    );
     return (
-      <div className="group flex items-center gap-2.5 py-2.5 sm:gap-3">
+      <div className="group flex items-start gap-2.5 py-2.5 sm:items-center sm:gap-3">
         <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm"
+          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm sm:mt-0"
           style={{ background: cssGrad(grad) }}
         >
           {(nome[0] || "?").toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{nome}</p>
+          {/* celular: nome + valor lado a lado; desktop: só o nome (valor na direita) */}
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="min-w-0 truncate text-sm font-medium text-slate-700 dark:text-slate-200">{nome}</p>
+            <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200 sm:hidden">
+              {fmtBRL(t.valor)}
+            </span>
+          </div>
           <p className={"flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs " + venc.cor}>
             {venc.texto}
             {t.recorrencia && (
-              <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+              <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
                 <Repeat size={10} /> {rotuloRecorrencia(t.recorrencia)}
               </span>
             )}
           </p>
+          {/* celular: ações na linha de baixo, com respiro pro dedo */}
+          <div className="mt-1.5 flex items-center gap-1 sm:hidden">{acoesLinha}</div>
         </div>
-        <span className="text-right text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+        <span className="hidden text-right text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200 sm:block">
           {fmtBRL(t.valor)}
         </span>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            onClick={() => acoes.marcarOk(t.id)}
-            title={t.tipo === "receita" ? "Marcar como recebido" : "Marcar como pago"}
-            className="flex items-center gap-1 rounded-lg border border-emerald-200 px-2 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950"
-          >
-            <Check size={13} />
-            <span className="hidden sm:inline">{t.tipo === "receita" ? "Recebi" : "Paguei"}</span>
-          </button>
-          <button
-            onClick={() => setForm(t)}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-            aria-label="Editar"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            onClick={() => setExcluindo(t)}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
-            aria-label="Excluir"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
+        <div className="hidden shrink-0 items-center gap-0.5 sm:flex">{acoesLinha}</div>
       </div>
     );
   }
@@ -2229,15 +2242,15 @@ function PaginaContas({ espaco, empresarial, acoes }) {
         </div>
       </div>
 
-      {/* Filtros + criação */}
+      {/* Filtros + criação — no celular os filtros rolam de lado numa linha só */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+        <div className="flex max-w-full flex-nowrap gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-slate-800 sm:flex-wrap sm:overflow-visible">
           {FILTROS.map(([v, r]) => (
             <button
               key={v}
               onClick={() => setFiltro(v)}
               className={
-                "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition " +
+                "shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition " +
                 (filtro === v
                   ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300"
                   : "text-slate-500 dark:text-slate-400")
@@ -2257,7 +2270,9 @@ function PaginaContas({ espaco, empresarial, acoes }) {
         </div>
       </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-2">
+      {/* grid-cols-1 (minmax 0) impede o min-content das linhas de alargar a
+          trilha no celular — sem ela o grid estoura a viewport e "deszooma" */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <Bloco tipo="despesa" titulo="Contas a pagar" />
         <Bloco tipo="receita" titulo="Contas a receber" />
       </div>
