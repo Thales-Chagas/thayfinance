@@ -22,7 +22,9 @@ export const ehUuid = (s) => typeof s === "string" && RE_UUID.test(s);
 
 // uuid estável a partir de uma string (4 blocos FNV-1a com sementes distintas).
 // Não é criptográfico — só precisa ser determinístico e bem distribuído.
-function uuidDeString(str) {
+// Exportado: o app usa pra dar id PREVISÍVEL às ocorrências de recorrência
+// (mesma série + mesma parcela = mesmo id ⇒ dois aparelhos não duplicam).
+export function uuidDeString(str) {
   const s = String(str);
   const bloco = (seed) => {
     let h = seed >>> 0;
@@ -58,6 +60,7 @@ function txParaLinha(userId, modo, t) {
     fornecedor_id: fkOuNull(t.fornecedorId),
     centro_custo_id: fkOuNull(t.centroCustoId),
     origem: t.origem || "manual",
+    recorrencia: t.recorrencia ?? null, // regra da série (jsonb) — null = avulso
   };
 }
 function txDeLinha(r) {
@@ -73,7 +76,19 @@ function txDeLinha(r) {
     fornecedorId: r.fornecedor_id ?? null,
     centroCustoId: r.centro_custo_id ?? null,
     origem: r.origem, // 'manual' | 'audio' | 'foto' | 'telegram' ...
+    ...(r.recorrencia ? { recorrencia: r.recorrencia } : {}),
   };
+}
+
+// Upsert de transações TOLERANTE: se a coluna `recorrencia` ainda não existir
+// no banco (migration recorrencia não rodada), tenta de novo sem ela — o app
+// segue funcionando e a regra passa a persistir quando a migration rodar.
+async function upsertTransacoes(linhas) {
+  let { error } = await supabase.from("transacoes").upsert(linhas);
+  if (error && error.code === "PGRST204" && /recorrencia/i.test(error.message || "")) {
+    ({ error } = await supabase.from("transacoes").upsert(linhas.map(({ recorrencia: _r, ...t }) => t)));
+  }
+  return { error };
 }
 
 /* ---------- contatos (cliente/fornecedor): {id,nome,telefone,email,obs} ---------- */
@@ -161,7 +176,10 @@ async function remover(tabela, id) {
   if (error) throw error;
 }
 
-export const salvarTransacao = (userId, modo, t) => upsert("transacoes", txParaLinha(userId, modo, t));
+export const salvarTransacao = async (userId, modo, t) => {
+  const { error } = await upsertTransacoes([txParaLinha(userId, modo, t)]);
+  if (error) throw error;
+};
 export const excluirTransacao = (id) => remover("transacoes", id);
 
 export const salvarCategoria = async (userId, modo, c) => {
@@ -322,7 +340,7 @@ export async function migrarLocalParaNuvem(userId, data, nuvem) {
 
   // 2) transações (dependem das categorias/contatos/centros já existirem)
   if (transacoes.length) {
-    const { error } = await supabase.from("transacoes").upsert(transacoes);
+    const { error } = await upsertTransacoes(transacoes);
     if (error) throw error;
   }
 

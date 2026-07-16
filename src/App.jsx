@@ -56,6 +56,8 @@ import {
   CircleCheck,
   Bell,
   BellOff,
+  Repeat,
+  CalendarDays,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -87,7 +89,7 @@ import {
   limparLoginNuvem,
   loginNuvemTs,
 } from "./cloudAuth";
-import { carregarTudo, sincronizar, migrarLocalParaNuvem } from "./cloudData";
+import { carregarTudo, sincronizar, migrarLocalParaNuvem, uuidDeString } from "./cloudData";
 import { gerarCodigoTelegram, statusTelegram, desconectarTelegram, BOT_URL, BOT_USERNAME } from "./telegramLink";
 import { suportePush, assinaturaAtual, ativarPush, desativarPush } from "./push";
 import {
@@ -237,8 +239,110 @@ const somaDias = (iso, dias) => {
   d.setDate(d.getDate() + dias);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+// Soma meses mantendo o DIA do mês; quando o mês de destino é mais curto,
+// encosta no último dia (31/01 + 1 mês = 28/02, mas 31/01 + 2 = 31/03,
+// porque a série sempre parte da data inicial — o dia-âncora não "derrapa").
+const somaMeses = (iso, n) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const alvo = m - 1 + n;
+  const ay = y + Math.floor(alvo / 12);
+  const am = ((alvo % 12) + 12) % 12;
+  const ad = Math.min(d, new Date(ay, am + 1, 0).getDate());
+  return `${ay}-${String(am + 1).padStart(2, "0")}-${String(ad).padStart(2, "0")}`;
+};
 
 const soma = (ts) => ts.reduce((a, t) => a + (Number(t.valor) || 0), 0);
+
+/* ============================================================
+   RECORRÊNCIA — contas que se repetem (aluguel, mensalidade...)
+   Cada ocorrência é um lançamento REAL com o campo `recorrencia`:
+   { grupo, tipo, cada, inicio, fim, n }. Assim dashboard, fluxo de
+   caixa, notificações e Telegram enxergam as parcelas sem mudar nada.
+   O id de cada ocorrência é DETERMINÍSTICO (série+parcela) — dois
+   aparelhos gerando a mesma parcela convergem na nuvem sem duplicar.
+   ============================================================ */
+
+const RECORRENCIAS = {
+  diaria: { rotulo: "Diária", dias: 1 },
+  semanal: { rotulo: "Semanal", dias: 7 },
+  quinzenal: { rotulo: "Quinzenal", dias: 14 },
+  mensal: { rotulo: "Mensal", meses: 1 },
+  bimestral: { rotulo: "Bimestral", meses: 2 },
+  trimestral: { rotulo: "Trimestral", meses: 3 },
+  semestral: { rotulo: "Semestral", meses: 6 },
+  anual: { rotulo: "Anual", meses: 12 },
+  dias: { rotulo: "Personalizada" }, // a cada `cada` dias
+};
+
+const REC_HORIZONTE_MESES = 12; // séries sem término ficam programadas até aqui
+const REC_MAX_GERACAO = 60;     // teto de parcelas criadas por série de uma vez
+
+// Data da n-ésima ocorrência (n=0 é o primeiro vencimento, em `inicio`)
+function dataRecorrencia(regra, n) {
+  const def = RECORRENCIAS[regra.tipo];
+  if (!def) return null;
+  if (def.meses) return somaMeses(regra.inicio, def.meses * n);
+  const passo = def.dias || Math.max(1, Number(regra.cada) || 0);
+  if (!passo) return null;
+  return somaDias(regra.inicio, passo * n);
+}
+
+const rotuloRecorrencia = (rec) =>
+  rec.tipo === "dias" ? `A cada ${rec.cada} dias` : RECORRENCIAS[rec.tipo]?.rotulo || "Recorrente";
+
+const menorData = (a, b) => (a && a < b ? a : b);
+
+// Gera as ocorrências a partir da parcela `aPartirN`, copiando os campos do
+// `modelo` (sem comprovante — cada parcela terá o seu). Para na data final,
+// no horizonte de 12 meses ou no teto de segurança, o que vier primeiro.
+// `idsExistentes` evita recriar uma parcela que já está na lista (ex.: uma
+// futura que a pessoa já marcou como paga).
+function gerarProximasOcorrencias(modelo, regra, aPartirN, idsExistentes) {
+  const horizonte = somaMeses(hojeISO(), REC_HORIZONTE_MESES);
+  const limite = menorData(regra.fim, horizonte);
+  const novas = [];
+  for (let n = aPartirN; novas.length < REC_MAX_GERACAO; n++) {
+    const data = dataRecorrencia(regra, n);
+    if (!data || data > limite) break;
+    const id = uuidDeString(`rec:${regra.grupo}:${regra.inicio}:${n}`);
+    if (idsExistentes?.has(id)) continue;
+    novas.push({
+      id,
+      tipo: modelo.tipo,
+      data,
+      valor: modelo.valor,
+      descricao: modelo.descricao || "",
+      categoriaId: modelo.categoriaId || "",
+      clienteId: modelo.clienteId || "",
+      fornecedorId: modelo.fornecedorId || "",
+      centroCustoId: modelo.centroCustoId || "",
+      status: "pendente",
+      origem: modelo.origem || "manual",
+      recorrencia: { ...regra, n },
+    });
+  }
+  return novas;
+}
+
+// "Renova" as séries sem término: encontra a última parcela programada de
+// cada série ativa e estende até o horizonte. Roda ao abrir o app; como os
+// ids são determinísticos, rodar de novo (ou em outro aparelho) não duplica.
+function estenderRecorrencias(transacoes) {
+  const ultimas = new Map(); // grupo -> parcela de maior n (carrega a regra vigente)
+  for (const t of transacoes) {
+    const g = t.recorrencia?.grupo;
+    if (!g) continue;
+    const atual = ultimas.get(g);
+    if (!atual || (t.recorrencia.n ?? 0) > (atual.recorrencia.n ?? 0)) ultimas.set(g, t);
+  }
+  if (ultimas.size === 0) return [];
+  const ids = new Set(transacoes.map((t) => t.id));
+  const novas = [];
+  for (const ref of ultimas.values()) {
+    novas.push(...gerarProximasOcorrencias(ref, ref.recorrencia, (ref.recorrencia.n ?? 0) + 1, ids));
+  }
+  return novas;
+}
 
 /* ============================================================
    ESTRUTURA DOS DADOS (v2 — lançamentos)
@@ -898,7 +1002,7 @@ function ChipStatus({ status, tipo }) {
    FORMULÁRIOS
    ============================================================ */
 
-function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onCriarCategoria, onFechar }) {
+function FormTransacao({ tipo, inicial, espaco, empresarial, statusPadrao = "ok", onSalvar, onCriarCategoria, onFechar }) {
   const ENTRADAS = ["Faturamento", "Salário"];
   const catPadrao =
     tipo === "receita"
@@ -911,7 +1015,7 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onCriarCa
       categoriaId: catPadrao?.id || "",
       valor: 0,
       descricao: "",
-      status: "ok",
+      status: statusPadrao,
       clienteId: "",
       fornecedorId: "",
       centroCustoId: "",
@@ -920,6 +1024,39 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onCriarCa
   const [erro, setErro] = useState("");
   const ehReceita = (inicial ? inicial.tipo : tipo) === "receita";
   const set = (k, v) => setT((p) => ({ ...p, [k]: v }));
+
+  // ---- Recorrência: estado da seção "Repetir lançamento" ----
+  const recInicial = inicial?.recorrencia || null;
+  const [recAtiva, setRecAtiva] = useState(!!recInicial);
+  const [recTipo, setRecTipo] = useState(recInicial?.tipo || "mensal");
+  const [recCada, setRecCada] = useState(recInicial?.cada || 30); // p/ "a cada X dias"
+  const [recFim, setRecFim] = useState(recInicial?.fim || "");    // "" = sem término
+  // regra que sai do formulário (null = repetição desligada)
+  const regraForm = recAtiva
+    ? { tipo: recTipo, cada: recTipo === "dias" ? Math.max(1, Number(recCada) || 0) : null, fim: recFim || null }
+    : null;
+  const regraOriginal = recInicial
+    ? { tipo: recInicial.tipo, cada: recInicial.cada ?? null, fim: recInicial.fim ?? null }
+    : null;
+  const recMudou = JSON.stringify(regraForm) !== JSON.stringify(regraOriginal);
+
+  // prévia dos próximos vencimentos (a partir da data escolhida)
+  const previa = useMemo(() => {
+    if (!recAtiva || !t.data) return null;
+    const regra = { ...regraForm, inicio: t.data, grupo: "previa" };
+    if (!dataRecorrencia(regra, 0)) return null; // regra incompleta (ex.: X dias vazio)
+    const datas = [];
+    let total = 0;
+    for (let n = 0; n < 500; n++) {
+      const d = dataRecorrencia(regra, n);
+      if (regra.fim && d > regra.fim) break;
+      total++;
+      if (datas.length < 4) datas.push(d);
+      if (!regra.fim && total > 4) break; // sem término: só as primeiras interessam
+    }
+    return { datas, total: regra.fim ? total : null, estourou: !!regra.fim && total >= 500 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recAtiva, recTipo, recCada, recFim, t.data]);
 
   // Criação de categoria na hora, sem sair do lançamento.
   const [criandoCat, setCriandoCat] = useState(false);
@@ -945,7 +1082,12 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onCriarCa
     if (!t.data) return setErro("Escolha a data.");
     if (!t.valor || t.valor <= 0) return setErro("Digite um valor maior que zero.");
     if (!t.categoriaId) return setErro("Escolha uma categoria.");
-    onSalvar(t);
+    if (recAtiva && recTipo === "dias" && (!Number(recCada) || Number(recCada) < 1))
+      return setErro("Na repetição personalizada, diga a cada quantos dias.");
+    if (recAtiva && recFim && recFim < t.data)
+      return setErro("A data final da repetição precisa ser depois do primeiro vencimento.");
+    // Numa edição sem mexer na repetição, `undefined` preserva a série como está.
+    onSalvar(t, inicial?.id && !recMudou ? undefined : regraForm);
     onFechar();
   }
 
@@ -1067,6 +1209,148 @@ function FormTransacao({ tipo, inicial, espaco, empresarial, onSalvar, onCriarCa
             <option value="pendente">Pendente</option>
           </select>
         </Campo>
+
+        {/* ---- Recorrência: repete o lançamento e programa os próximos ---- */}
+        <div
+          className={
+            "rounded-2xl border p-3 transition " +
+            (recAtiva
+              ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/30"
+              : "border-slate-200 dark:border-slate-700")
+          }
+        >
+          <button type="button" onClick={() => setRecAtiva((v) => !v)} className="flex w-full items-center gap-3 text-left">
+            <span
+              className={
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white transition " +
+                (recAtiva
+                  ? "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm"
+                  : "bg-slate-300 dark:bg-slate-700")
+              }
+            >
+              <Repeat size={16} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Repetir lançamento
+              </span>
+              <span className="block text-[11px] leading-snug text-slate-400">
+                {recAtiva
+                  ? `${rotuloRecorrencia({ tipo: recTipo, cada: recCada })} · ${recFim ? "até " + fmtData(recFim) : "sem término"}`
+                  : "Aluguel, mensalidade, assinatura… eu programo os próximos vencimentos."}
+              </span>
+            </span>
+            {/* interruptor liga/desliga */}
+            <span
+              aria-hidden
+              className={
+                "relative h-6 w-11 shrink-0 rounded-full transition " +
+                (recAtiva ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")
+              }
+            >
+              <span
+                className={
+                  "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " +
+                  (recAtiva ? "left-[22px]" : "left-0.5")
+                }
+              />
+            </span>
+          </button>
+
+          {recAtiva && (
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(RECORRENCIAS).map(([id, def]) => (
+                  <button
+                    type="button"
+                    key={id}
+                    onClick={() => setRecTipo(id)}
+                    className={
+                      "rounded-full px-3 py-1.5 text-xs font-semibold transition " +
+                      (recTipo === id
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700 dark:hover:bg-slate-700")
+                    }
+                  >
+                    {def.rotulo}
+                  </button>
+                ))}
+              </div>
+
+              {recTipo === "dias" && (
+                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  Repetir a cada
+                  <input
+                    type="number"
+                    min="1"
+                    max="999"
+                    value={recCada}
+                    onChange={(e) => setRecCada(e.target.value)}
+                    className={inputCls + " !w-20 text-center"}
+                  />
+                  dias
+                </div>
+              )}
+
+              <Campo label="Repetir até">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRecFim("")}
+                    className={
+                      "shrink-0 rounded-xl px-3 py-2 text-xs font-semibold transition " +
+                      (!recFim
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700")
+                    }
+                  >
+                    Sem término
+                  </button>
+                  <input
+                    type="date"
+                    value={recFim}
+                    min={t.data || undefined}
+                    onChange={(e) => setRecFim(e.target.value)}
+                    className={inputCls + " flex-1"}
+                  />
+                </div>
+              </Campo>
+
+              {previa && (
+                <div className="rounded-xl border border-emerald-100 bg-white/80 p-2.5 dark:border-emerald-900/60 dark:bg-slate-900/50">
+                  <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                    <CalendarDays size={12} /> Próximos vencimentos
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {previa.datas.map((d) => (
+                      <span
+                        key={d}
+                        className="rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold tabular-nums text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                      >
+                        {fmtData(d)}
+                      </span>
+                    ))}
+                    {(previa.total === null || previa.total > previa.datas.length) && (
+                      <span className="px-1 py-1 text-[11px] text-slate-400">…</span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-snug text-slate-400">
+                    {previa.total !== null
+                      ? `${previa.estourou ? "Mais de " : ""}${previa.total} lançamento${previa.total > 1 ? "s" : ""} até ${fmtData(recFim)}.`
+                      : "Sem data final — deixo sempre os próximos 12 meses programados."}
+                  </p>
+                </div>
+              )}
+
+              {inicial?.id && recInicial && recMudou && (
+                <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
+                  A mudança vale desta conta em diante — as anteriores ficam como estão.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
         {empresarial && ehReceita && espaco.clientes.length > 0 && (
           <Campo label="Cliente (opcional)">
             <select
@@ -1271,6 +1555,7 @@ function CapturaIA({ onResultado, showToast }) {
 function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, showToast }) {
   const [form, setForm] = useState(null); // null | {} novo | transacao p/ editar
   const [verComprovante, setVerComprovante] = useState(null); // dataURL p/ visualizar
+  const [excluindo, setExcluindo] = useState(null); // transacao aguardando confirmação
   const prefixo = mesPrefixo(ano, mesIdx);
   const lista = espaco.transacoes
     .filter((t) => t.tipo === tipo && t.data.startsWith(prefixo))
@@ -1343,8 +1628,13 @@ function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, showT
                   <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">
                     {t.descricao || catNome(t.categoriaId)}
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-400">
                     {fmtData(t.data)} · {catNome(t.categoriaId)}
+                    {t.recorrencia && (
+                      <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                        <Repeat size={10} /> {rotuloRecorrencia(t.recorrencia)}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <ChipStatus status={t.status} tipo={t.tipo} />
@@ -1374,9 +1664,7 @@ function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, showT
                     <Pencil size={15} />
                   </button>
                   <button
-                    onClick={() => {
-                      if (window.confirm("Excluir este lançamento?")) acoes.excluir(t.id);
-                    }}
+                    onClick={() => setExcluindo(t)}
                     className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
                     aria-label="Excluir"
                   >
@@ -1405,6 +1693,15 @@ function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes, showT
         <Modal titulo="Comprovante" onFechar={() => setVerComprovante(null)}>
           <img src={verComprovante} alt="Comprovante" className="w-full rounded-xl" />
         </Modal>
+      )}
+
+      {excluindo && (
+        <ModalExcluirConta
+          transacao={excluindo}
+          onExcluir={acoes.excluir}
+          onExcluirSerie={acoes.excluirSerie}
+          onFechar={() => setExcluindo(null)}
+        />
       )}
     </div>
   );
@@ -1658,59 +1955,218 @@ function PaginaDashboard({ espaco, ano, mesIdx, escuro, irPara }) {
    CONTAS A PAGAR E RECEBER
    ============================================================ */
 
-function PaginaContas({ espaco, acoes }) {
+// Confirmação de exclusão que entende recorrência: numa conta de série,
+// oferece "só esta" ou "esta e as próximas" (as já pagas ficam guardadas).
+function ModalExcluirConta({ transacao, onExcluir, onExcluirSerie, onFechar }) {
+  const ehSerie = !!transacao.recorrencia;
+  return (
+    <Modal titulo="Excluir lançamento" onFechar={onFechar}>
+      <div className="space-y-3">
+        <div className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
+          <p className="font-semibold text-slate-700 dark:text-slate-200">
+            {transacao.descricao || "Lançamento"} · {fmtBRL(transacao.valor)}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
+            {fmtData(transacao.data)}
+            {ehSerie && (
+              <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                <Repeat size={11} /> {rotuloRecorrencia(transacao.recorrencia)}
+              </span>
+            )}
+          </p>
+        </div>
+        {ehSerie && (
+          <p className="text-xs leading-relaxed text-slate-400">
+            Esta conta faz parte de uma repetição. Você pode excluir só ela ou também todas as
+            próximas ainda pendentes — o que já foi pago ou recebido fica guardado.
+          </p>
+        )}
+        <div className="space-y-2">
+          <button
+            onClick={() => {
+              onExcluir(transacao.id);
+              onFechar();
+            }}
+            className="w-full rounded-xl border border-red-200 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            {ehSerie ? "Excluir só esta" : "Sim, excluir"}
+          </button>
+          {ehSerie && (
+            <button
+              onClick={() => {
+                onExcluirSerie(transacao.id);
+                onFechar();
+              }}
+              className="w-full rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+            >
+              Excluir esta e as próximas
+            </button>
+          )}
+          <button
+            onClick={onFechar}
+            className="w-full rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function PaginaContas({ espaco, empresarial, acoes }) {
+  const [form, setForm] = useState(null); // null | {tipoNovo} | transacao p/ editar
+  const [excluindo, setExcluindo] = useState(null); // transacao aguardando confirmação
+  const [filtro, setFiltro] = useState("todas");
+
   const hoje = hojeISO();
   const em7 = somaDias(hoje, 7);
-  const catNome = (id) => espaco.categorias.find((c) => c.id === id)?.nome || "—";
-  const pendentes = (tipo) =>
-    espaco.transacoes
-      .filter((t) => t.tipo === tipo && t.status === "pendente")
-      .sort((a, b) => a.data.localeCompare(b.data));
+  const catDe = (id) => espaco.categorias.find((c) => c.id === id) || null;
+  const catNome = (id) => catDe(id)?.nome || "—";
+  const diasAte = (iso) =>
+    Math.round((new Date(iso + "T12:00:00") - new Date(hoje + "T12:00:00")) / 86400000);
+
+  const pendentes = espaco.transacoes.filter((t) => t.status === "pendente");
+  const totalPagar = soma(pendentes.filter((t) => t.tipo === "despesa"));
+  const totalReceber = soma(pendentes.filter((t) => t.tipo === "receita"));
+  const vencidas = pendentes.filter((t) => t.data < hoje);
+  const proximas7 = pendentes.filter((t) => t.data >= hoje && t.data <= em7);
+  // séries ativas: grupos de recorrência que ainda têm parcela pendente
+  const seriesAtivas = new Set(pendentes.map((t) => t.recorrencia?.grupo).filter(Boolean)).size;
+
+  const FILTROS = [
+    ["todas", "Todas"],
+    ["vencidas", "Vencidas"],
+    ["7dias", "Próximos 7 dias"],
+    ["mes", "Este mês"],
+    ["recorrentes", "Recorrentes"],
+  ];
+  const passaFiltro = (t) => {
+    if (filtro === "vencidas") return t.data < hoje;
+    if (filtro === "7dias") return t.data >= hoje && t.data <= em7;
+    if (filtro === "mes") return t.data.startsWith(hoje.slice(0, 7));
+    if (filtro === "recorrentes") return !!t.recorrencia;
+    return true;
+  };
+
+  // rótulo de urgência da linha
+  function rotuloVencimento(t) {
+    const d = diasAte(t.data);
+    if (d < 0) return { texto: d === -1 ? "Venceu ontem" : `Venceu há ${-d} dias`, cor: "font-semibold text-red-500" };
+    if (d === 0) return { texto: "Vence hoje", cor: "font-semibold text-amber-500" };
+    if (d <= 7) return { texto: `Vence em ${d} dia${d > 1 ? "s" : ""} · ${fmtData(t.data)}`, cor: "font-semibold text-amber-500" };
+    return { texto: "Vence em " + fmtData(t.data), cor: "text-slate-400" };
+  }
+
+  function Linha({ t }) {
+    const cat = catDe(t.categoriaId);
+    const grad = cat ? gradCat(cat) : gradPorId("grafite");
+    const venc = rotuloVencimento(t);
+    const nome = t.descricao || catNome(t.categoriaId);
+    return (
+      <div className="group flex items-center gap-2.5 py-2.5 sm:gap-3">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm"
+          style={{ background: cssGrad(grad) }}
+        >
+          {(nome[0] || "?").toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{nome}</p>
+          <p className={"flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs " + venc.cor}>
+            {venc.texto}
+            {t.recorrencia && (
+              <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                <Repeat size={10} /> {rotuloRecorrencia(t.recorrencia)}
+              </span>
+            )}
+          </p>
+        </div>
+        <span className="text-right text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+          {fmtBRL(t.valor)}
+        </span>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            onClick={() => acoes.marcarOk(t.id)}
+            title={t.tipo === "receita" ? "Marcar como recebido" : "Marcar como pago"}
+            className="flex items-center gap-1 rounded-lg border border-emerald-200 px-2 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950"
+          >
+            <Check size={13} />
+            <span className="hidden sm:inline">{t.tipo === "receita" ? "Recebi" : "Paguei"}</span>
+          </button>
+          <button
+            onClick={() => setForm(t)}
+            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+            aria-label="Editar"
+          >
+            <Pencil size={15} />
+          </button>
+          <button
+            onClick={() => setExcluindo(t)}
+            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+            aria-label="Excluir"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   function Bloco({ tipo, titulo }) {
-    const lista = pendentes(tipo);
+    const lista = espaco.transacoes
+      .filter((t) => t.tipo === tipo && t.status === "pendente" && passaFiltro(t))
+      .sort((a, b) => a.data.localeCompare(b.data));
+    // agrupa por urgência — cada seção com seu tom
+    const secoes = [
+      ["Vencidas", (t) => t.data < hoje, "text-red-500"],
+      ["Vence hoje", (t) => t.data === hoje, "text-amber-500"],
+      ["Próximos 7 dias", (t) => t.data > hoje && t.data <= em7, "text-amber-500/90"],
+      ["Mais adiante", (t) => t.data > em7, "text-slate-400"],
+    ]
+      .map(([rotulo, cond, cor]) => [rotulo, lista.filter(cond), cor])
+      .filter(([, itens]) => itens.length > 0);
+    const ehReceita = tipo === "receita";
     return (
       <Card>
-        <SectionTitle right={<span className="text-xs text-slate-400">{fmtBRL(soma(lista))}</span>}>
+        <SectionTitle
+          right={
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {fmtBRL(soma(lista))}
+            </span>
+          }
+        >
           {titulo}
         </SectionTitle>
         {lista.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-400">Nada pendente. 🎉</p>
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <span className="rounded-2xl bg-slate-100 p-3 text-slate-300 dark:bg-slate-800 dark:text-slate-600">
+              <CalendarClock size={24} />
+            </span>
+            <p className="text-sm text-slate-400">
+              {filtro === "todas" ? "Nada pendente por aqui. 🎉" : "Nada neste filtro."}
+            </p>
+            <button
+              onClick={() => setForm({ tipoNovo: tipo })}
+              className="text-xs font-semibold text-emerald-600 hover:underline dark:text-emerald-400"
+            >
+              + Adicionar conta {ehReceita ? "a receber" : "a pagar"}
+            </button>
+          </div>
         ) : (
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {lista.map((t) => {
-              const vencida = t.data < hoje;
-              const perto = !vencida && t.data <= em7;
-              return (
-                <div key={t.id} className="flex items-center gap-2 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">
-                      {t.descricao || catNome(t.categoriaId)}
-                    </p>
-                    <p
-                      className={
-                        "text-xs " +
-                        (vencida
-                          ? "font-semibold text-red-500"
-                          : perto
-                          ? "font-semibold text-amber-500"
-                          : "text-slate-400")
-                      }
-                    >
-                      {vencida ? "Venceu em " : "Vence em "}
-                      {fmtData(t.data)}
-                      {perto ? " · próximo!" : ""}
-                    </p>
-                  </div>
-                  <span className="w-24 text-right text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
-                    {fmtBRL(t.valor)}
-                  </span>
-                  <BotaoLeve onClick={() => acoes.marcarOk(t.id)}>
-                    <Check size={13} /> {tipo === "receita" ? "Recebi" : "Paguei"}
-                  </BotaoLeve>
+          <div className="space-y-3">
+            {secoes.map(([rotulo, itens, cor]) => (
+              <div key={rotulo}>
+                <p className={"mb-0.5 text-[11px] font-semibold uppercase tracking-wide " + cor}>
+                  {rotulo} · {itens.length}
+                </p>
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {itens.map((t) => (
+                    <Linha key={t.id} t={t} />
+                  ))}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </Card>
@@ -1718,9 +2174,115 @@ function PaginaContas({ espaco, acoes }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Bloco tipo="despesa" titulo="Contas a pagar" />
-      <Bloco tipo="receita" titulo="Contas a receber" />
+    <div className="space-y-4">
+      {/* Painel-resumo com os totais pendentes e alertas */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 p-5 text-white sm:p-6">
+        <div className="pointer-events-none absolute -right-12 -top-16 h-52 w-52 rounded-full bg-white/10 blur-2xl" />
+        <div className="pointer-events-none absolute -bottom-20 left-1/3 h-44 w-44 rounded-full bg-teal-300/10 blur-2xl" />
+        <div className="relative">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-emerald-100/90">
+            <CalendarClock size={13} /> Contas a pagar &amp; receber
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-4 sm:max-w-md">
+            <div>
+              <p className="text-xs text-emerald-100/80">Total a pagar</p>
+              <p className="mt-0.5 break-words text-xl font-bold tabular-nums sm:text-2xl">{fmtBRL(totalPagar)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-emerald-100/80">Total a receber</p>
+              <p className="mt-0.5 break-words text-xl font-bold tabular-nums text-emerald-200 sm:text-2xl">
+                {fmtBRL(totalReceber)}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+            {vencidas.length > 0 && (
+              <button
+                onClick={() => setFiltro("vencidas")}
+                className="flex items-center gap-1 rounded-full bg-red-500/90 px-2.5 py-1 transition hover:bg-red-500"
+              >
+                <AlertTriangle size={11} /> {vencidas.length} vencida{vencidas.length > 1 ? "s" : ""}
+              </button>
+            )}
+            {proximas7.length > 0 && (
+              <button
+                onClick={() => setFiltro("7dias")}
+                className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 transition hover:bg-white/25"
+              >
+                <CalendarDays size={11} /> {proximas7.length} nos próximos 7 dias
+              </button>
+            )}
+            {seriesAtivas > 0 && (
+              <button
+                onClick={() => setFiltro("recorrentes")}
+                className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 transition hover:bg-white/25"
+              >
+                <Repeat size={11} /> {seriesAtivas} recorrência{seriesAtivas > 1 ? "s" : ""} ativa{seriesAtivas > 1 ? "s" : ""}
+              </button>
+            )}
+            {vencidas.length === 0 && proximas7.length === 0 && pendentes.length > 0 && (
+              <span className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1">
+                <CircleCheck size={11} /> Nada vencendo esta semana
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Filtros + criação */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+          {FILTROS.map(([v, r]) => (
+            <button
+              key={v}
+              onClick={() => setFiltro(v)}
+              className={
+                "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition " +
+                (filtro === v
+                  ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300"
+                  : "text-slate-500 dark:text-slate-400")
+              }
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <BotaoLeve onClick={() => setForm({ tipoNovo: "receita" })} className="!border-emerald-200 !text-emerald-700 hover:!bg-emerald-50 dark:!border-emerald-800 dark:!text-emerald-300 dark:hover:!bg-emerald-950">
+            <Plus size={14} /> A receber
+          </BotaoLeve>
+          <BotaoPrimario onClick={() => setForm({ tipoNovo: "despesa" })}>
+            <Plus size={16} /> Nova conta a pagar
+          </BotaoPrimario>
+        </div>
+      </div>
+
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Bloco tipo="despesa" titulo="Contas a pagar" />
+        <Bloco tipo="receita" titulo="Contas a receber" />
+      </div>
+
+      {form !== null && (
+        <FormTransacao
+          tipo={form.tipoNovo || form.tipo}
+          inicial={form.id ? form : null}
+          espaco={espaco}
+          empresarial={empresarial}
+          statusPadrao="pendente"
+          onSalvar={acoes.salvar}
+          onCriarCategoria={acoes.criarCategoria}
+          onFechar={() => setForm(null)}
+        />
+      )}
+
+      {excluindo && (
+        <ModalExcluirConta
+          transacao={excluindo}
+          onExcluir={acoes.excluir}
+          onExcluirSerie={acoes.excluirSerie}
+          onFechar={() => setExcluindo(null)}
+        />
+      )}
     </div>
   );
 }
@@ -3986,6 +4548,30 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), ms);
   }
 
+  // Renova as recorrências sem término: ao abrir o app (com os dados certos já
+  // carregados — nuvem, se logado), garante os próximos 12 meses programados.
+  // Ids determinísticos ⇒ rodar em outro aparelho não duplica parcela.
+  const recorrenciasRenovadasRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || auth !== "open" || recorrenciasRenovadasRef.current) return;
+    if (userId && !nuvemPronta) return; // espera os dados da nuvem chegarem
+    recorrenciasRenovadasRef.current = true;
+    setData((prev) => {
+      let mudou = false;
+      const prox = { ...prev };
+      for (const m of ["pessoal", "empresarial"]) {
+        const extras = estenderRecorrencias(prev[m].transacoes);
+        if (extras.length) {
+          mudou = true;
+          prox[m] = { ...prev[m], transacoes: [...prev[m].transacoes, ...extras] };
+        }
+      }
+      if (!mudou) return prev;
+      dirtyRef.current = true;
+      return prox;
+    });
+  }, [loaded, auth, nuvemPronta, userId]);
+
   const espaco = data[modo];
   const empresarial = modo === "empresarial";
   const NAV = empresarial ? NAV_EMPRESA : NAV_PESSOAL;
@@ -4003,15 +4589,87 @@ export default function App() {
   }
 
   const acoesTransacao = {
-    salvar: (t) =>
-      atualizarEspaco((esp) => ({
-        ...esp,
-        transacoes: t.id
-          ? esp.transacoes.map((x) => (x.id === t.id ? t : x))
-          : [...esp.transacoes, { ...t, id: uid() }],
-      })),
+    // Salva o lançamento e cuida da recorrência:
+    //  regra === undefined → não mexe na série (edição sem tocar na repetição)
+    //  regra === null      → repetição desligada (encerra a série, se havia)
+    //  regra = {tipo,cada,fim} → (re)programa a série a partir deste lançamento
+    salvar: (t, regra) =>
+      atualizarEspaco((esp) => {
+        const anterior = t.id ? esp.transacoes.find((x) => x.id === t.id) : null;
+        let base = t.id ? { ...t } : { ...t, id: uid() };
+        let ts = anterior
+          ? esp.transacoes.map((x) => (x.id === base.id ? base : x))
+          : [...esp.transacoes, base];
+        if (regra === undefined) return { ...esp, transacoes: ts };
+
+        const grupoAntigo = anterior?.recorrencia?.grupo;
+        if (grupoAntigo) {
+          // a regra mudou (ou foi desligada): some com as próximas pendentes da
+          // série antiga e encerra a regra nas que ficam (pra não renascerem)
+          ts = ts
+            .filter(
+              (x) =>
+                !(x.recorrencia?.grupo === grupoAntigo && x.id !== base.id && x.status === "pendente" && x.data > base.data)
+            )
+            .map((x) =>
+              x.id !== base.id && x.recorrencia?.grupo === grupoAntigo
+                ? { ...x, recorrencia: { ...x.recorrencia, fim: menorData(x.recorrencia.fim, somaDias(base.data, -1)) } }
+                : x
+            );
+        }
+        if (regra) {
+          // série nova (mesmo numa edição: grupo novo daqui em diante,
+          // as parcelas antigas guardam a história com a regra encerrada)
+          const r = { grupo: uid(), tipo: regra.tipo, cada: regra.cada ?? null, inicio: base.data, fim: regra.fim ?? null, n: 0 };
+          base = { ...base, recorrencia: r };
+          ts = ts.map((x) => (x.id === base.id ? base : x));
+          const ids = new Set(ts.map((x) => x.id));
+          ts = [...ts, ...gerarProximasOcorrencias(base, r, 1, ids)];
+        } else if (base.recorrencia) {
+          const { recorrencia: _r, ...semRec } = base;
+          ts = ts.map((x) => (x.id === base.id ? semRec : x));
+        }
+        return { ...esp, transacoes: ts };
+      }),
+    // Exclui UMA conta. Se era a última programada de uma série sem término,
+    // encerra a série ali — senão o app recriaria a parcela sozinho depois.
     excluir: (id) =>
-      atualizarEspaco((esp) => ({ ...esp, transacoes: esp.transacoes.filter((x) => x.id !== id) })),
+      atualizarEspaco((esp) => {
+        const alvo = esp.transacoes.find((x) => x.id === id);
+        const g = alvo?.recorrencia?.grupo;
+        let ts = esp.transacoes.filter((x) => x.id !== id);
+        if (g) {
+          const doGrupo = esp.transacoes.filter((x) => x.recorrencia?.grupo === g);
+          const maxN = Math.max(...doGrupo.map((x) => x.recorrencia.n ?? 0));
+          if ((alvo.recorrencia.n ?? 0) === maxN) {
+            ts = ts.map((x) =>
+              x.recorrencia?.grupo === g
+                ? { ...x, recorrencia: { ...x.recorrencia, fim: menorData(x.recorrencia.fim, somaDias(alvo.data, -1)) } }
+                : x
+            );
+          }
+        }
+        return { ...esp, transacoes: ts };
+      }),
+    // Exclui a conta E todas as próximas da mesma série (as pagas ficam).
+    excluirSerie: (id) =>
+      atualizarEspaco((esp) => {
+        const alvo = esp.transacoes.find((x) => x.id === id);
+        const g = alvo?.recorrencia?.grupo;
+        if (!g) return { ...esp, transacoes: esp.transacoes.filter((x) => x.id !== id) };
+        return {
+          ...esp,
+          transacoes: esp.transacoes
+            .filter(
+              (x) => x.id !== id && !(x.recorrencia?.grupo === g && x.status === "pendente" && x.data >= alvo.data)
+            )
+            .map((x) =>
+              x.recorrencia?.grupo === g
+                ? { ...x, recorrencia: { ...x.recorrencia, fim: menorData(x.recorrencia.fim, somaDias(alvo.data, -1)) } }
+                : x
+            ),
+        };
+      }),
     marcarOk: (id) =>
       atualizarEspaco((esp) => ({
         ...esp,
@@ -4626,7 +5284,7 @@ export default function App() {
               {view === "despesas" && (
                 <PaginaTransacoes tipo="despesa" espaco={espaco} empresarial={empresarial} ano={ano} mesIdx={mesIdx} acoes={acoesTransacao} showToast={showToast} />
               )}
-              {view === "contas" && <PaginaContas espaco={espaco} acoes={acoesTransacao} />}
+              {view === "contas" && <PaginaContas espaco={espaco} empresarial={empresarial} acoes={acoesTransacao} />}
               {view === "fluxo" && <PaginaFluxo espaco={espaco} />}
               {view === "metas" && <PaginaMetas espaco={espaco} atualizar={atualizarEspaco} />}
               {view === "categorias" && <PaginaCategorias espaco={espaco} atualizar={atualizarEspaco} avisar={showToast} />}
