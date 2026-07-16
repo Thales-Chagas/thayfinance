@@ -290,6 +290,18 @@ function dataRecorrencia(regra, n) {
 const rotuloRecorrencia = (rec) =>
   rec.tipo === "dias" ? `A cada ${rec.cada} dias` : RECORRENCIAS[rec.tipo]?.rotulo || "Recorrente";
 
+// Total de parcelas de uma série COM data final (null = sem término → não conta).
+function totalParcelas(regra) {
+  if (!regra?.fim) return null;
+  let n = 0;
+  while (n < 3000) {
+    const d = dataRecorrencia(regra, n);
+    if (!d || d > regra.fim) break;
+    n++;
+  }
+  return n || null;
+}
+
 const menorData = (a, b) => (a && a < b ? a : b);
 
 // Gera as ocorrências a partir da parcela `aPartirN`, copiando os campos do
@@ -2014,9 +2026,116 @@ function ModalExcluirConta({ transacao, onExcluir, onExcluirSerie, onFechar }) {
   );
 }
 
+// Popup de detalhes de uma conta (abre ao tocar no logo da categoria):
+// descrição completa, categoria, vencimento, dados da recorrência e — só
+// quando a série tem data final — quantas parcelas faltam.
+function ModalDetalheConta({ transacao, categoria, parcelas, onPagar, onEditar, onFechar }) {
+  const t = transacao;
+  const grad = categoria ? gradCat(categoria) : gradPorId("grafite");
+  const ehReceita = t.tipo === "receita";
+  const rec = t.recorrencia;
+  const nome = t.descricao || categoria?.nome || "Lançamento";
+
+  const hoje = hojeISO();
+  const dias = Math.round((new Date(t.data + "T12:00:00") - new Date(hoje + "T12:00:00")) / 86400000);
+  const vencTxt =
+    dias < 0 ? (dias === -1 ? "Venceu ontem" : `Venceu há ${-dias} dias`)
+    : dias === 0 ? "Vence hoje"
+    : `Faltam ${dias} dia${dias > 1 ? "s" : ""}`;
+  const vencCor = dias < 0 ? "text-red-500" : dias <= 7 ? "text-amber-500" : "text-slate-400";
+
+  const Info = ({ rotulo, children }) => (
+    <div className="flex items-start justify-between gap-3 py-2.5">
+      <span className="shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">{rotulo}</span>
+      <span className="text-right text-sm font-medium text-slate-700 dark:text-slate-200">{children}</span>
+    </div>
+  );
+
+  return (
+    <Modal titulo="Detalhes da conta" onFechar={onFechar}>
+      <div className="space-y-4">
+        {/* cabeçalho: avatar grande + nome completo + valor */}
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-sm"
+            style={{ background: cssGrad(grad) }}
+          >
+            {(nome[0] || "?").toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="break-words text-base font-bold leading-snug text-slate-800 dark:text-slate-100">
+              {nome}
+            </p>
+            <p
+              className={
+                "text-2xl font-bold tabular-nums " +
+                (ehReceita ? "text-emerald-600 dark:text-emerald-400" : "text-slate-800 dark:text-slate-100")
+              }
+            >
+              {fmtBRL(t.valor)}
+            </p>
+          </div>
+        </div>
+
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+          <Info rotulo="Tipo">{ehReceita ? "A receber" : "A pagar"}</Info>
+          <Info rotulo="Categoria">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: cssGrad(grad) }} />
+              {categoria?.nome || "—"}
+            </span>
+          </Info>
+          <Info rotulo="Vencimento">
+            <span className="flex flex-col items-end">
+              <span className="tabular-nums">{fmtData(t.data)}</span>
+              <span className={"text-xs font-semibold " + vencCor}>{vencTxt}</span>
+            </span>
+          </Info>
+          {rec && (
+            <Info rotulo="Repetição">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                <Repeat size={11} /> {rotuloRecorrencia(rec)}
+              </span>
+            </Info>
+          )}
+          {rec?.inicio && <Info rotulo="Início da série"><span className="tabular-nums">{fmtData(rec.inicio)}</span></Info>}
+          {rec?.fim && <Info rotulo="Termina em"><span className="tabular-nums">{fmtData(rec.fim)}</span></Info>}
+          {/* parcelas: só quando a série tem data final (sem fim = nada aqui) */}
+          {parcelas && (
+            <Info rotulo="Parcelas">
+              <span className="flex flex-col items-end">
+                <span>Parcela {parcelas.posicao} de {parcelas.total}</span>
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  {parcelas.faltam <= 1 ? "última parcela" : `faltam ${parcelas.faltam} parcelas`}
+                </span>
+              </span>
+            </Info>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => { onEditar(); onFechar(); }}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+          >
+            <Pencil size={15} /> Editar
+          </button>
+          <button
+            onClick={() => { onPagar(); onFechar(); }}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+          >
+            <Check size={15} /> {ehReceita ? "Recebi" : "Paguei"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function PaginaContas({ espaco, empresarial, acoes }) {
   const [form, setForm] = useState(null); // null | {tipoNovo} | transacao p/ editar
   const [excluindo, setExcluindo] = useState(null); // transacao aguardando confirmação
+  const [detalhe, setDetalhe] = useState(null); // transacao cujo popup de detalhes está aberto
   const [filtro, setFiltro] = useState("todas");
 
   const hoje = hojeISO();
@@ -2058,6 +2177,17 @@ function PaginaContas({ espaco, empresarial, acoes }) {
     return { texto: "Vence em " + fmtData(t.data), cor: "text-slate-400" };
   }
 
+  // Info de parcelas p/ o popup: só quando a série tem data final (senão null).
+  // posição = qual parcela é esta; faltam = quantas restam a partir desta.
+  function infoParcelas(t) {
+    const rec = t.recorrencia;
+    if (!rec?.fim) return null;
+    const total = totalParcelas(rec);
+    if (!total) return null;
+    const n = rec.n ?? 0;
+    return { posicao: n + 1, total, faltam: Math.max(1, total - n) };
+  }
+
   function Linha({ t }) {
     const cat = catDe(t.categoriaId);
     const grad = cat ? gradCat(cat) : gradPorId("grafite");
@@ -2093,12 +2223,16 @@ function PaginaContas({ espaco, empresarial, acoes }) {
     );
     return (
       <div className="group flex items-start gap-2.5 py-2.5 sm:items-center sm:gap-3">
-        <div
-          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm sm:mt-0"
+        <button
+          type="button"
+          onClick={() => setDetalhe(t)}
+          title="Ver detalhes"
+          aria-label={"Ver detalhes de " + nome}
+          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm outline-none ring-emerald-300 transition hover:brightness-110 focus-visible:ring-2 active:scale-95 sm:mt-0 dark:ring-emerald-700"
           style={{ background: cssGrad(grad) }}
         >
           {(nome[0] || "?").toUpperCase()}
-        </div>
+        </button>
         <div className="min-w-0 flex-1">
           {/* celular: nome + valor lado a lado; desktop: só o nome (valor na direita) */}
           <div className="flex items-baseline justify-between gap-2">
@@ -2296,6 +2430,17 @@ function PaginaContas({ espaco, empresarial, acoes }) {
           onExcluir={acoes.excluir}
           onExcluirSerie={acoes.excluirSerie}
           onFechar={() => setExcluindo(null)}
+        />
+      )}
+
+      {detalhe && (
+        <ModalDetalheConta
+          transacao={detalhe}
+          categoria={catDe(detalhe.categoriaId)}
+          parcelas={infoParcelas(detalhe)}
+          onPagar={() => acoes.marcarOk(detalhe.id)}
+          onEditar={() => setForm(detalhe)}
+          onFechar={() => setDetalhe(null)}
         />
       )}
     </div>
