@@ -170,7 +170,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
           </div>
           <button
             onClick={onVerTour}
-            className="flex shrink-0 items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
+            className="flex shrink-0 items-center gap-2 rounded-xl bg-emerald-50 min-h-11 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
           >
             <Lightbulb size={15} /> Ver dicas
           </button>
@@ -189,7 +189,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
           {userId && (
             <button
               onClick={onConectarTelegram}
-              className="flex shrink-0 items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-emerald-50 min-h-11 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
             >
               <Send size={15} /> {tg ? "Gerenciar" : "Conectar"}
             </button>
@@ -239,7 +239,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
                   setConfirmandoLimpar(false);
                 }}
                 className={
-                  "flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition " +
+                  "flex flex-1 items-center justify-center gap-2 rounded-xl border min-h-11 px-3 py-2 text-sm font-medium transition " +
                   (ativo
                     ? "border-red-400 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-950/50 dark:text-red-300"
                     : "border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800")
@@ -255,7 +255,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
         {!confirmandoLimpar ? (
           <button
             onClick={() => setConfirmandoLimpar(true)}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-red-300 min-h-11 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
           >
             <Trash2 size={15} /> Limpar dados {alvoLimpar === "empresarial" ? "empresariais" : "pessoais"}
           </button>
@@ -269,13 +269,13 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
             <div className="flex gap-2">
               <button
                 onClick={() => setConfirmandoLimpar(false)}
-                className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-white dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="flex-1 rounded-xl border border-slate-300 min-h-11 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-white dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Cancelar
               </button>
               <button
                 onClick={limpar}
-                className="flex-1 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                className="flex-1 rounded-xl bg-red-600 min-h-11 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
               >
                 Sim, apagar tudo
               </button>
@@ -287,7 +287,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
       {onSair && (
         <button
           onClick={onSair}
-          className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+          className="flex items-center gap-2 rounded-xl border border-slate-200 min-h-11 px-4 py-2 text-sm font-medium text-slate-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
         >
           <LogOut size={16} /> Sair da conta
         </button>

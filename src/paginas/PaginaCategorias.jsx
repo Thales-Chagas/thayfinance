@@ -44,7 +44,7 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
       {/* --- criador: preview ao vivo + nome + cor --- */}
       <Card>
         <form onSubmit={adicionar} className="space-y-3">
-          <div className="flex gap-2.5">
+          <div className="flex flex-wrap gap-2.5 sm:flex-nowrap">
             <div
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white shadow-sm transition-all"
               style={{ background: cssGrad(gradPorId(novaCor) || sugestao) }}
@@ -55,10 +55,11 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
               type="text"
               value={nova}
               onChange={(e) => setNova(e.target.value)}
-              placeholder="Nome da nova categoria (ex.: Mercado, Lazer, Salário...)"
-              className={inputCls + " flex-1"}
+              placeholder="Nova categoria (ex.: Mercado)"
+              aria-label="Nome da nova categoria"
+              className={inputCls + " h-11 min-w-0 flex-1"}
             />
-            <BotaoPrimario>
+            <BotaoPrimario className="h-11 w-full justify-center sm:w-auto">
               <Plus size={16} /> Criar
             </BotaoPrimario>
           </div>
@@ -132,22 +133,22 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
                       </>
                     )}
                   </div>
-                  <div className="flex shrink-0 gap-0.5 opacity-60 transition group-hover:opacity-100">
+                  <div className="flex shrink-0 gap-0.5">
                     <button
                       onClick={() => setCorAberta(corAberta === c.id ? null : c.id)}
-                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 transition active:scale-95 dark:text-slate-400 md:h-9 md:w-9 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                       aria-label="Trocar cor"
                       title="Trocar cor"
                     >
-                      <Palette size={14} />
+                      <Palette size={17} />
                     </button>
                     <button
                       onClick={() => setEditando({ id: c.id, nome: c.nome })}
-                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 transition active:scale-95 dark:text-slate-400 md:h-9 md:w-9 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                       aria-label="Renomear"
                       title="Renomear"
                     >
-                      <Pencil size={14} />
+                      <Pencil size={17} />
                     </button>
                     <button
                       onClick={() => {
@@ -155,11 +156,11 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
                           return avisar("Essa categoria tem lançamentos. Mova-os antes de excluir.", true);
                         atualizar((esp) => ({ ...esp, categorias: esp.categorias.filter((x) => x.id !== c.id) }));
                       }}
-                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 transition active:scale-95 dark:text-slate-400 md:h-9 md:w-9 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
                       aria-label="Excluir"
                       title="Excluir"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={17} />
                     </button>
                   </div>
                 </div>

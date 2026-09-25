@@ -20,7 +20,7 @@ export function SeletorGradiente({ valor, sugestao, onChange }) {
             aria-label={"Cor " + g.nome}
             onClick={() => onChange(valor === g.id ? null : g.id)}
             className={
-              "h-7 w-7 rounded-full transition-transform " +
+              "h-10 w-10 rounded-full transition-transform sm:h-7 sm:w-7 " +
               (ativo
                 ? "scale-110 ring-2 ring-slate-700 ring-offset-2 dark:ring-slate-200 dark:ring-offset-slate-900"
                 : "hover:scale-110")
@@ -91,7 +91,7 @@ export function BotaoPrimario({ children, onClick, className = "" }) {
     <button
       onClick={onClick}
       className={
-        "flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 " +
+        "flex min-h-11 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 active:scale-[0.98] md:min-h-10 " +
         className
       }
     >
@@ -106,7 +106,7 @@ export function BotaoLeve({ children, onClick, className = "", title }) {
       onClick={onClick}
       title={title}
       className={
-        "flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 " +
+        "flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 py-1.5 text-sm font-medium text-slate-600 transition md:min-h-9 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 " +
         className
       }
     >

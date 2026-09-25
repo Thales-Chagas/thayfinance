@@ -194,14 +194,12 @@ export function TourBoasVindas({ onFechar, bioDisponivel, bioAtivo, onAtivarBiom
             ) : (
               <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
                 Este navegador/aparelho não ofereceu leitor facial ou de digital. No <b>celular</b>,
-                depois de instalar o app, é só tocar no ícone <ScanFace size={14} className="inline" />{" "}
-                no topo da tela pra ativar.
+                depois de instalar o app, é só ir em <b>Mais → Face ID / digital</b> pra ativar.
               </div>
             )}
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              É totalmente opcional — dá pra ligar ou desligar quando quiser, no ícone{" "}
-              <ScanFace size={12} className="inline" /> do app.
+              É totalmente opcional — dá pra ligar ou desligar quando quiser, em <b>Mais → Face ID / digital</b>.
             </p>
           </>
         )}
@@ -232,7 +230,7 @@ export function TourBoasVindas({ onFechar, bioDisponivel, bioAtivo, onAtivarBiom
               <Send size={16} /> Conectar meu Telegram
             </button>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Se preferir deixar pra depois, o botão "Conectar Telegram" fica sempre no menu do app.
+              Se preferir deixar pra depois, é só ir em <b>Mais → Robô do Telegram</b>.
             </p>
           </>
         )}

@@ -1,5 +1,5 @@
 import React from "react";
-import { Check, Pencil, Repeat } from "lucide-react";
+import { Check, Pencil, Repeat, Trash2 } from "lucide-react";
 import { fmtBRL, hojeISO, fmtData } from "../lib/formato";
 import { rotuloRecorrencia } from "../lib/recorrencia";
 import { gradPorId, gradCat, cssGrad } from "../lib/cores";
@@ -41,7 +41,7 @@ export function ModalExcluirConta({ transacao, onExcluir, onExcluirSerie, onFech
               onExcluir(transacao.id);
               onFechar();
             }}
-            className="w-full rounded-xl border border-red-200 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+            className="w-full rounded-xl border border-red-200 h-12 text-base sm:text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
           >
             {ehSerie ? "Excluir só esta" : "Sim, excluir"}
           </button>
@@ -51,14 +51,14 @@ export function ModalExcluirConta({ transacao, onExcluir, onExcluirSerie, onFech
                 onExcluirSerie(transacao.id);
                 onFechar();
               }}
-              className="w-full rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+              className="w-full rounded-xl bg-red-600 h-12 text-base sm:text-sm font-semibold text-white transition hover:bg-red-700"
             >
               Excluir esta e as próximas
             </button>
           )}
           <button
             onClick={onFechar}
-            className="w-full rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+            className="w-full rounded-xl border border-slate-200 h-12 text-base sm:text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
           >
             Cancelar
           </button>
@@ -71,7 +71,7 @@ export function ModalExcluirConta({ transacao, onExcluir, onExcluirSerie, onFech
 // Popup de detalhes de uma conta (abre ao tocar no logo da categoria):
 // descrição completa, categoria, vencimento, dados da recorrência e — só
 // quando a série tem data final — quantas parcelas faltam.
-export function ModalDetalheConta({ transacao, categoria, parcelas, onPagar, onEditar, onFechar }) {
+export function ModalDetalheConta({ transacao, categoria, parcelas, onPagar, onEditar, onExcluir, onFechar }) {
   const t = transacao;
   const grad = categoria ? gradCat(categoria) : gradPorId("grafite");
   const ehReceita = t.tipo === "receita";
@@ -158,17 +158,28 @@ export function ModalDetalheConta({ transacao, categoria, parcelas, onPagar, onE
         <div className="flex gap-2">
           <button
             onClick={() => { onEditar(); onFechar(); }}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 h-12 text-base sm:text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
           >
             <Pencil size={15} /> Editar
           </button>
           <button
             onClick={() => { onPagar(); onFechar(); }}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 h-12 text-base sm:text-sm font-semibold text-white transition hover:bg-emerald-700"
           >
             <Check size={15} /> {ehReceita ? "Recebi" : "Paguei"}
           </button>
         </div>
+        {onExcluir && (
+          <button
+            onClick={() => {
+              onFechar();
+              onExcluir();
+            }}
+            className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl text-base font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 sm:text-sm"
+          >
+            <Trash2 size={16} /> Excluir conta
+          </button>
+        )}
       </div>
     </Modal>
   );

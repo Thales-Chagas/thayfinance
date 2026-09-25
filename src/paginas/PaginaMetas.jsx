@@ -53,51 +53,6 @@ export function PaginaMetas({ espaco, atualizar }) {
   const confirmar = useConfirmar();
   const [form, setForm] = useState(null);
 
-  function FormMeta({ inicial, onFechar }) {
-    const [m, setM] = useState(inicial || { nome: "", alvo: 0, atual: 0 });
-    const [erro, setErro] = useState("");
-    function salvar(e) {
-      e.preventDefault();
-      if (!m.nome.trim()) return setErro("Dê um nome para a meta.");
-      if (!m.alvo || m.alvo <= 0) return setErro("Digite o valor objetivo.");
-      atualizar((esp) => ({
-        ...esp,
-        metas: m.id
-          ? esp.metas.map((x) => (x.id === m.id ? m : x))
-          : [...esp.metas, { ...m, id: uid() }],
-      }));
-      onFechar();
-    }
-    return (
-      <Modal titulo={inicial ? "Editar meta" : "Nova meta"} onFechar={onFechar}>
-        <form onSubmit={salvar} className="space-y-3">
-          <Campo label="Nome da meta">
-            <input
-              type="text"
-              value={m.nome}
-              onChange={(e) => setM({ ...m, nome: e.target.value })}
-              placeholder="Ex.: Reserva de emergência, viagem..."
-              className={inputCls}
-              autoFocus
-            />
-          </Campo>
-          <div className="grid grid-cols-2 gap-3">
-            <Campo label="Valor objetivo (R$)">
-              <CurrencyField value={m.alvo} onChange={(v) => setM({ ...m, alvo: v })} className="!w-full" />
-            </Campo>
-            <Campo label="Valor atual (R$)">
-              <CurrencyField value={m.atual} onChange={(v) => setM({ ...m, atual: v })} className="!w-full" />
-            </Campo>
-          </div>
-          {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
-          <BotaoPrimario className="w-full justify-center">
-            <Check size={16} /> Salvar
-          </BotaoPrimario>
-        </form>
-      </Modal>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -150,25 +105,25 @@ export function PaginaMetas({ espaco, atualizar }) {
                       </p>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-col gap-0.5 opacity-60 transition group-hover:opacity-100">
+                  <div className="flex shrink-0 flex-col gap-1">
                     <button
                       onClick={() => setForm(m)}
-                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 transition active:scale-95 dark:text-slate-400 md:h-9 md:w-9 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                       aria-label="Editar"
                       title="Editar"
                     >
-                      <Pencil size={14} />
+                      <Pencil size={17} />
                     </button>
                     <button
                       onClick={async () => {
                         if (await confirmar({ titulo: "Excluir esta meta?", mensagem: `A meta "${m.nome}" será apagada.`, confirmar: "Excluir", perigo: true }))
                           atualizar((esp) => ({ ...esp, metas: esp.metas.filter((x) => x.id !== m.id) }));
                       }}
-                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 transition active:scale-95 dark:text-slate-400 md:h-9 md:w-9 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
                       aria-label="Excluir"
                       title="Excluir"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={17} />
                     </button>
                   </div>
                 </div>
@@ -177,7 +132,52 @@ export function PaginaMetas({ espaco, atualizar }) {
           })}
         </div>
       )}
-      {form !== null && <FormMeta inicial={form.id ? form : null} onFechar={() => setForm(null)} />}
+      {form !== null && <FormMeta inicial={form.id ? form : null} atualizar={atualizar} onFechar={() => setForm(null)} />}
     </div>
+  );
+}
+
+function FormMeta({ inicial, onFechar, atualizar }) {
+  const [m, setM] = useState(inicial || { nome: "", alvo: 0, atual: 0 });
+  const [erro, setErro] = useState("");
+  function salvar(e) {
+    e.preventDefault();
+    if (!m.nome.trim()) return setErro("Dê um nome para a meta.");
+    if (!m.alvo || m.alvo <= 0) return setErro("Digite o valor objetivo.");
+    atualizar((esp) => ({
+      ...esp,
+      metas: m.id
+        ? esp.metas.map((x) => (x.id === m.id ? m : x))
+        : [...esp.metas, { ...m, id: uid() }],
+    }));
+    onFechar();
+  }
+  return (
+    <Modal titulo={inicial ? "Editar meta" : "Nova meta"} onFechar={onFechar}>
+      <form onSubmit={salvar} className="space-y-3">
+        <Campo label="Nome da meta">
+          <input
+            type="text"
+            value={m.nome}
+            onChange={(e) => setM({ ...m, nome: e.target.value })}
+            placeholder="Ex.: Reserva de emergência, viagem..."
+            className={inputCls}
+            autoFocus
+          />
+        </Campo>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Valor objetivo (R$)">
+            <CurrencyField value={m.alvo} onChange={(v) => setM({ ...m, alvo: v })} className="!w-full" />
+          </Campo>
+          <Campo label="Valor atual (R$)">
+            <CurrencyField value={m.atual} onChange={(v) => setM({ ...m, atual: v })} className="!w-full" />
+          </Campo>
+        </div>
+        {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+        <BotaoPrimario className="w-full justify-center">
+          <Check size={16} /> Salvar
+        </BotaoPrimario>
+      </form>
+    </Modal>
   );
 }

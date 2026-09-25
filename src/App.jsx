@@ -1174,7 +1174,7 @@ export default function App() {
             a.id === "+" ? (
               <div key="+" className="flex items-center justify-center">
                 <button
-                  onClick={() => abrirLancamento({ tipo: "despesa" })}
+                  onClick={() => abrirLancamento(view === "contas" ? { tipo: "despesa", statusPadrao: "pendente" } : { tipo: "despesa" })}
                   className="flex h-14 w-14 -translate-y-3 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-700 active:scale-95"
                   aria-label="Novo lançamento"
                 >

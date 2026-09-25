@@ -135,7 +135,7 @@ ${htmlTabela(["Mês", "Receitas", "Despesas", "Lucro", "Acumulado"], anual.map((
               key={v}
               onClick={() => setAba(v)}
               className={
-                "rounded-lg px-4 py-1.5 text-xs font-semibold transition " +
+                "h-10 rounded-lg px-5 text-sm font-semibold transition " +
                 (aba === v
                   ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300"
                   : "text-slate-500 dark:text-slate-400")
@@ -157,7 +157,7 @@ ${htmlTabela(["Mês", "Receitas", "Despesas", "Lucro", "Acumulado"], anual.map((
 
       {aba === "mensal" ? (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <StatCard icon={TrendingUp} label="Receitas" value={fmtBRL(recMes)} />
             <StatCard icon={TrendingDown} label="Despesas" value={fmtBRL(despMes)} />
             <StatCard
