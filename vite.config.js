@@ -16,7 +16,7 @@ export default defineConfig({
       srcDir: "src",
       filename: "sw.js",
       injectManifest: {
-        globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
+        globPatterns: ["**/*.{js,css,html,png,svg,ico,webp}"],
       },
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
@@ -28,6 +28,11 @@ export default defineConfig({
         background_color: "#f8fafc",
         display: "standalone",
         orientation: "portrait",
+        // Segurar o ícone do app (Android) mostra estes atalhos
+        shortcuts: [
+          { name: "Nova despesa", short_name: "Despesa", url: "/?acao=nova-despesa", icons: [{ src: "pwa-192.png", sizes: "192x192", type: "image/png" }] },
+          { name: "Nova receita", short_name: "Receita", url: "/?acao=nova-receita", icons: [{ src: "pwa-192.png", sizes: "192x192", type: "image/png" }] },
+        ],
         icons: [
           { src: "pwa-192.png", sizes: "192x192", type: "image/png" },
           { src: "pwa-512.png", sizes: "512x512", type: "image/png" },

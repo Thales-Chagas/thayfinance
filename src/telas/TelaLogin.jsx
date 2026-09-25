@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
-import logoUrl from "../logo.png";
-import emblemaUrl from "../emblema.png";
+import logoUrl from "../logo.webp";
+import emblemaUrl from "../emblema.webp";
 import { Moon, Sun, Camera, ScanFace } from "lucide-react";
 import { inputCls } from "../components/ui";
 import { CropFotoModal } from "../components/CropFotoModal";

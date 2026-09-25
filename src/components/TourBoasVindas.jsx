@@ -1,37 +1,7 @@
 import React, { useState } from "react";
 import { Download, Check, Loader2, Camera, Mic, ScanFace, Lock, ArrowRight, Send, Smartphone, Share, SquarePlus, EllipsisVertical, CircleCheck } from "lucide-react";
 import { Modal } from "./ui";
-
-// Instalação como aplicativo (PWA). O Chrome no Android/PC dispara
-// beforeinstallprompt bem antes do React montar — guardamos o evento no módulo
-// pra oferecer o botão "Instalar agora" com 1 toque. No iPhone esse evento não
-// existe: lá a instalação é sempre manual (Compartilhar → Adicionar à Tela de Início).
-export let eventoInstalacao = null;
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeinstallprompt", (e) => {
-    e.preventDefault();
-    eventoInstalacao = e;
-  });
-  window.addEventListener("appinstalled", () => {
-    eventoInstalacao = null;
-  });
-}
-export const EH_IOS =
-  typeof navigator !== "undefined" &&
-  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    // iPad novo se apresenta como Mac, mas tem tela de toque
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
-export const EH_ANDROID = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
-export function rodandoComoApp() {
-  try {
-    return (
-      window.matchMedia?.("(display-mode: standalone)")?.matches ||
-      window.navigator.standalone === true
-    );
-  } catch {
-    return false;
-  }
-}
+import { instalacao, EH_IOS, rodandoComoApp } from "../lib/pwa";
 
 // Tour de boas-vindas em 3 passos: instalar como aplicativo, ativar a
 // biometria e conhecer o bot do Telegram. Aparece 1x por aparelho; pode ser
@@ -47,13 +17,13 @@ export function TourBoasVindas({ onFechar, bioDisponivel, bioAtivo, onAtivarBiom
 
   // Botão nativo "Instalar agora" (Chrome no Android/PC guarda o evento).
   async function instalarAgora() {
-    if (!eventoInstalacao) return;
+    if (!instalacao.evento) return;
     setInstalando(true);
     try {
-      eventoInstalacao.prompt();
-      const { outcome } = await eventoInstalacao.userChoice;
+      instalacao.evento.prompt();
+      const { outcome } = await instalacao.evento.userChoice;
       if (outcome === "accepted") setInstalouAgora(true);
-      eventoInstalacao = null;
+      instalacao.evento = null;
     } catch {
       /* usuário fechou o aviso */
     } finally {
@@ -92,7 +62,7 @@ export function TourBoasVindas({ onFechar, bioDisponivel, bioAtivo, onAtivarBiom
               </div>
             ) : (
               <>
-                {eventoInstalacao && (
+                {instalacao.evento && (
                   <button
                     onClick={instalarAgora}
                     disabled={instalando}

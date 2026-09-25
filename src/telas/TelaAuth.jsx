@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import logoUrl from "../logo.png";
-import bgLoginUrl from "../bg-login.jpg";
+import logoUrl from "../logo.webp";
+import bgLoginUrl from "../bg-login.webp";
 import { User, Mail, Lock, Eye, EyeOff, ShieldCheck, ArrowRight } from "lucide-react";
 import { cadastrar as cadastrarNuvem, entrar as entrarNuvem, reenviarConfirmacao, redefinirSenha, atualizarSenha } from "../cloudAuth";
 

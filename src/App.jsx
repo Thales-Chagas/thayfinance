@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import emblemaUrl from "./emblema.png";
+import React, { useState, useEffect, useRef, Suspense, lazy } from "react";
+import emblemaUrl from "./emblema.webp";
 import { User, Briefcase, ChevronLeft, ChevronDown, Download, Upload, Check, Loader2, Cloud, CloudOff, Moon, Sun, LogOut, Camera, ScanFace, Send, Plus, Home, ListOrdered, CalendarClock, LayoutGrid } from "lucide-react";
 import { definirNomeNuvem, sairNuvem, sessaoAtual, aoMudarAuth, marcarLoginNuvem, limparLoginNuvem, loginNuvemTs } from "./cloudAuth";
 import { carregarTudo, sincronizar, migrarLocalParaNuvem } from "./cloudData";
@@ -15,7 +15,6 @@ import { useConfirmar } from "./components/Confirmar";
 import { useTecladoVirtual } from "./components/Sheet";
 import { Toast } from "./components/Toast";
 import { gradientePorNome } from "./lib/cores";
-import { CropFotoModal } from "./components/CropFotoModal";
 import { PaginaLancamentos } from "./paginas/PaginaLancamentos";
 import { PaginaInicio } from "./paginas/PaginaInicio";
 import { PaginaMais } from "./paginas/PaginaMais";
@@ -23,17 +22,30 @@ import { FormTransacao } from "./components/FormTransacao";
 import { SeletorMes } from "./components/SeletorMes";
 import { Sheet } from "./components/Sheet";
 import { PaginaContas } from "./paginas/PaginaContas";
-import { PaginaFluxo } from "./paginas/PaginaFluxo";
-import { PaginaMetas } from "./paginas/PaginaMetas";
-import { PaginaCategorias } from "./paginas/PaginaCategorias";
-import { PaginaCadastro } from "./paginas/PaginaCadastro";
-import { PaginaRelatorios } from "./paginas/PaginaRelatorios";
-import { TelaAuth, TelaNovaSenha } from "./telas/TelaAuth";
-import { TelaLogin } from "./telas/TelaLogin";
 import { NAV_PESSOAL, NAV_EMPRESA, DENTRO_DE_MAIS, abaDe, USA_MES, TITULOS } from "./lib/navegacao";
-import { PaginaConta } from "./paginas/PaginaConta";
-import { ModalConectarTelegram } from "./components/ModalConectarTelegram";
-import { TourBoasVindas } from "./components/TourBoasVindas";
+import { aplicarCorDoTema } from "./lib/pwa";
+
+// Telas usadas de vez em quando: baixadas só quando abertas (a primeira
+// tela carrega mais rápido em celular e internet fraca).
+const sob = (carregar, nome) => lazy(() => carregar().then((m) => ({ default: m[nome] })));
+const PaginaFluxo = sob(() => import("./paginas/PaginaFluxo"), "PaginaFluxo");
+const PaginaMetas = sob(() => import("./paginas/PaginaMetas"), "PaginaMetas");
+const PaginaCategorias = sob(() => import("./paginas/PaginaCategorias"), "PaginaCategorias");
+const PaginaCadastro = sob(() => import("./paginas/PaginaCadastro"), "PaginaCadastro");
+const PaginaRelatorios = sob(() => import("./paginas/PaginaRelatorios"), "PaginaRelatorios");
+const PaginaConta = sob(() => import("./paginas/PaginaConta"), "PaginaConta");
+const TelaAuth = sob(() => import("./telas/TelaAuth"), "TelaAuth");
+const TelaNovaSenha = sob(() => import("./telas/TelaAuth"), "TelaNovaSenha");
+const TelaLogin = sob(() => import("./telas/TelaLogin"), "TelaLogin");
+const CropFotoModal = sob(() => import("./components/CropFotoModal"), "CropFotoModal");
+const ModalConectarTelegram = sob(() => import("./components/ModalConectarTelegram"), "ModalConectarTelegram");
+const TourBoasVindas = sob(() => import("./components/TourBoasVindas"), "TourBoasVindas");
+
+const Carregando = () => (
+  <div className="flex min-h-[40vh] items-center justify-center text-slate-400" role="status" aria-label="Carregando">
+    <Loader2 size={22} className="animate-spin" />
+  </div>
+);
 
 export default function App() {
   const [data, setData] = useState(dadosVazios);
@@ -75,6 +87,7 @@ export default function App() {
   // Aplica o tema escuro/claro
   useEffect(() => {
     document.documentElement.classList.toggle("dark", escuro);
+    aplicarCorDoTema(escuro);
     try {
       localStorage.setItem(TEMA_KEY, escuro ? "escuro" : "claro");
     } catch {
@@ -481,6 +494,21 @@ export default function App() {
     return () => window.removeEventListener("popstate", aoVoltar);
   }, []);
 
+  // Atalho do ícone do app (?acao=nova-despesa / nova-receita): abre o
+  // lançamento assim que o app estiver aberto e limpa o endereço.
+  useEffect(() => {
+    if (auth !== "open" || !loaded) return;
+    const acao = new URLSearchParams(window.location.search).get("acao");
+    if (acao !== "nova-despesa" && acao !== "nova-receita") return;
+    abrirLancamento({ tipo: acao === "nova-receita" ? "receita" : "despesa" });
+    try {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.hash);
+    } catch {
+      /* ignora */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, loaded]);
+
   function trocarModo(novoModo) {
     setEscolhendoModo(false);
     if (novoModo === modo) return;
@@ -803,11 +831,16 @@ export default function App() {
   }
 
   if (auth === "auth") {
-    return <TelaAuth />;
+    return (
+      <Suspense fallback={<Carregando />}>
+        <TelaAuth />
+      </Suspense>
+    );
   }
 
   if (auth === "recuperar") {
     return (
+      <Suspense fallback={<Carregando />}>
       <TelaNovaSenha
         onPronto={() => {
           // Senha gravada; a sessão já é válida. Limpa o hash da URL pra um
@@ -820,11 +853,13 @@ export default function App() {
           setAuth(estadoComSessao(login));
         }}
       />
+      </Suspense>
     );
   }
 
   if (auth === "setup" || auth === "lock") {
     return (
+      <Suspense fallback={<Carregando />}>
       <TelaLogin
         modo={auth}
         nome={login?.nome}
@@ -837,6 +872,7 @@ export default function App() {
         escuro={escuro}
         onTema={() => setEscuro((e) => !e)}
       />
+      </Suspense>
     );
   }
 
@@ -1052,7 +1088,7 @@ export default function App() {
               <div className="h-48 animate-pulse rounded-2xl bg-slate-200/70 dark:bg-slate-800" />
             </div>
           ) : (
-            <>
+            <Suspense fallback={<Carregando />}>
               {view === "dashboard" && (
                 <PaginaInicio
                   espaco={espaco}
@@ -1159,7 +1195,7 @@ export default function App() {
                   userId={userId}
                 />
               )}
-            </>
+            </Suspense>
           )}
         </main>
       </div>
@@ -1263,6 +1299,7 @@ export default function App() {
         }}
       />
 
+      <Suspense fallback={null}>
       {/* Ajuste de enquadramento da foto de perfil */}
       {arquivoFoto && <CropFotoModal file={arquivoFoto} onConfirmar={salvarFoto} onFechar={() => setArquivoFoto(null)} />}
 
@@ -1283,6 +1320,8 @@ export default function App() {
           }}
         />
       )}
+
+      </Suspense>
 
       {/* Input oculto para importar backup */}
       <input
