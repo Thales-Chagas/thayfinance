@@ -20,7 +20,7 @@ export function ModalExcluirConta({ transacao, onExcluir, onExcluirSerie, onFech
           <p className="font-semibold text-slate-700 dark:text-slate-200">
             {transacao.descricao || "Lançamento"} · {fmtBRL(transacao.valor)}
           </p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
             {fmtData(transacao.data)}
             {ehSerie && (
               <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
@@ -30,7 +30,7 @@ export function ModalExcluirConta({ transacao, onExcluir, onExcluirSerie, onFech
           </p>
         </div>
         {ehSerie && (
-          <p className="text-xs leading-relaxed text-slate-400">
+          <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
             Esta conta faz parte de uma repetição. Você pode excluir só ela ou também todas as
             próximas ainda pendentes — o que já foi pago ou recebido fica guardado.
           </p>
@@ -84,11 +84,11 @@ export function ModalDetalheConta({ transacao, categoria, parcelas, onPagar, onE
     dias < 0 ? (dias === -1 ? "Venceu ontem" : `Venceu há ${-dias} dias`)
     : dias === 0 ? "Vence hoje"
     : `Faltam ${dias} dia${dias > 1 ? "s" : ""}`;
-  const vencCor = dias < 0 ? "text-red-500" : dias <= 7 ? "text-amber-500" : "text-slate-400";
+  const vencCor = dias < 0 ? "text-red-500" : dias <= 7 ? "text-amber-500" : "text-slate-500 dark:text-slate-400";
 
   const Info = ({ rotulo, children }) => (
     <div className="flex items-start justify-between gap-3 py-2.5">
-      <span className="shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">{rotulo}</span>
+      <span className="shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{rotulo}</span>
       <span className="text-right text-sm font-medium text-slate-700 dark:text-slate-200">{children}</span>
     </div>
   );

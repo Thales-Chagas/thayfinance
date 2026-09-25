@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X } from "lucide-react";
+import { Sheet } from "./Sheet";
 import { fmtNum, parseBR } from "../lib/formato";
 import { GRADIENTES, cssGrad } from "../lib/cores";
 
@@ -63,13 +63,13 @@ export function StatCard({ icon: Icon, label, value, sub, tone = "default" }) {
         <Icon size={20} />
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 sm:text-xs">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 sm:text-xs">
           {label}
         </p>
         <p className={"mt-0.5 break-words text-base font-semibold leading-tight sm:text-xl " + tones[tone]}>
           {value}
         </p>
-        {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
+        {sub && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{sub}</p>}
       </div>
     </Card>
   );
@@ -157,23 +157,30 @@ export function Campo({ label, children }) {
   );
 }
 
-export function Modal({ titulo, onFechar, children }) {
+// Todos os painéis do app usam o Sheet (acessível, acompanha o teclado).
+export function Modal(props) {
+  return <Sheet {...props} />;
+}
+
+// Botão só com ícone: sempre 44×44 no celular (área de toque confortável).
+export function BotaoIcone({ rotulo, onClick, children, className = "", perigo = false, ...resto }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 dark:bg-slate-900 sm:rounded-3xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">{titulo}</h3>
-          <button
-            onClick={onFechar}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800"
-            aria-label="Fechar"
-          >
-            <X size={18} />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={rotulo}
+      title={rotulo}
+      className={
+        "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition active:scale-95 dark:text-slate-400 md:h-9 md:w-9 " +
+        (perigo
+          ? "hover:bg-red-50 hover:text-red-600 active:bg-red-100 dark:hover:bg-red-950 dark:hover:text-red-400 "
+          : "hover:bg-slate-100 hover:text-slate-700 active:bg-slate-200 dark:hover:bg-slate-800 dark:hover:text-slate-200 ") +
+        className
+      }
+      {...resto}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -184,7 +191,7 @@ export function ChipStatus({ status, tipo }) {
   return (
     <span
       className={
-        "rounded-full px-2 py-0.5 text-[11px] font-semibold " +
+        "rounded-full px-2 py-0.5 text-xs font-semibold " +
         (ok
           ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
           : "bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400")

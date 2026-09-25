@@ -151,7 +151,7 @@ export function TourBoasVindas({ onFechar, bioDisponivel, bioAtivo, onAtivarBiom
                   </ul>
                 )}
 
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Pronto: o ícone do Thayfinance aparece junto com os outros aplicativos.
                 </p>
               </>
@@ -199,7 +199,7 @@ export function TourBoasVindas({ onFechar, bioDisponivel, bioAtivo, onAtivarBiom
               </div>
             )}
 
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               É totalmente opcional — dá pra ligar ou desligar quando quiser, no ícone{" "}
               <ScanFace size={12} className="inline" /> do app.
             </p>
@@ -231,7 +231,7 @@ export function TourBoasVindas({ onFechar, bioDisponivel, bioAtivo, onAtivarBiom
             >
               <Send size={16} /> Conectar meu Telegram
             </button>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Se preferir deixar pra depois, o botão "Conectar Telegram" fica sempre no menu do app.
             </p>
           </>

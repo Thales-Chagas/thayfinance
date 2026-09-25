@@ -78,11 +78,11 @@ export function PaginaFluxo({ espaco }) {
           ))}
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => navegar(-1)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Anterior">
+          <button onClick={() => navegar(-1)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Anterior">
             <ChevronLeft size={18} />
           </button>
           <span className="min-w-32 text-center text-sm font-medium text-slate-600 dark:text-slate-300">{rotulo}</span>
-          <button onClick={() => navegar(1)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Próximo">
+          <button onClick={() => navegar(1)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Próximo">
             <ChevronRight size={18} />
           </button>
         </div>
@@ -101,12 +101,12 @@ export function PaginaFluxo({ espaco }) {
 
       <Card>
         {linhas.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-400">Nenhum lançamento neste período.</p>
+          <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Nenhum lançamento neste período.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-400 dark:border-slate-800">
+                <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-400 dark:border-slate-800">
                   <th className="py-2 pr-2">Data</th>
                   <th className="py-2 pr-2">Descrição</th>
                   <th className="py-2 pr-2 text-right">Entrada</th>

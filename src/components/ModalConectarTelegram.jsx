@@ -2,10 +2,12 @@ import React, { useState, useEffect } from "react";
 import { Check, Loader2, Send, Copy, RefreshCw } from "lucide-react";
 import { gerarCodigoTelegram, statusTelegram, desconectarTelegram, BOT_URL, BOT_USERNAME } from "../telegramLink";
 import { Modal } from "./ui";
+import { useConfirmar } from "./Confirmar";
 
 // Conectar o bot do Telegram à conta: o app gera um código de 6 números,
 // a pessoa manda "/conectar 123456" no bot e o vínculo é criado sozinho.
 export function ModalConectarTelegram({ userId, nome, onFechar, showToast }) {
+  const confirmar = useConfirmar();
   const [carregando, setCarregando] = useState(true);
   const [vinculo, setVinculo] = useState(null); // { chat_id } se já conectado
   const [codigo, setCodigo] = useState(null);
@@ -36,7 +38,8 @@ export function ModalConectarTelegram({ userId, nome, onFechar, showToast }) {
   }
 
   async function desconectar() {
-    if (!window.confirm("Desligar o Telegram desta conta? Você pode reconectar quando quiser.")) return;
+    const ok = await confirmar({ titulo: "Desligar o Telegram?", mensagem: "O robô deixa de lançar nesta conta. Você pode reconectar quando quiser.", confirmar: "Desligar", perigo: true });
+    if (!ok) return;
     try {
       await desconectarTelegram(userId);
       setVinculo(null);
@@ -61,7 +64,7 @@ export function ModalConectarTelegram({ userId, nome, onFechar, showToast }) {
   return (
     <Modal titulo="Conectar Telegram" onFechar={onFechar}>
       {carregando ? (
-        <div className="flex items-center justify-center gap-2 py-10 text-slate-400">
+        <div className="flex items-center justify-center gap-2 py-10 text-slate-500 dark:text-slate-400">
           <Loader2 size={18} className="animate-spin" /> Carregando...
         </div>
       ) : vinculo ? (
@@ -153,7 +156,7 @@ export function ModalConectarTelegram({ userId, nome, onFechar, showToast }) {
                 <Send size={16} /> Abrir o bot no Telegram
               </a>
 
-              <div className="flex items-center justify-between text-xs text-slate-400">
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                 <span>O código vale por 15 minutos.</span>
                 <button onClick={gerar} disabled={gerando} className="flex items-center gap-1 underline-offset-2 hover:underline disabled:opacity-60">
                   <RefreshCw size={12} className={gerando ? "animate-spin" : ""} /> Gerar outro

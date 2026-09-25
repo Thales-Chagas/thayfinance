@@ -63,7 +63,7 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
             </BotaoPrimario>
           </div>
           <SeletorGradiente valor={novaCor} sugestao={sugestao} onChange={setNovaCor} />
-          <p className="text-[11px] text-slate-400">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             {novaCor
               ? `Cor escolhida: ${gradPorId(novaCor)?.nome}`
               : nova.trim()
@@ -76,7 +76,7 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
       {/* --- grade de categorias --- */}
       {espaco.categorias.length === 0 ? (
         <Card>
-          <p className="py-8 text-center text-sm text-slate-400">
+          <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
             Nenhuma categoria ainda. Crie a primeira aí em cima! 🏷️
           </p>
         </Card>
@@ -125,7 +125,7 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
                     ) : (
                       <>
                         <p className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">{c.nome}</p>
-                        <p className="text-xs text-slate-400">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
                           {n} lançamento{n !== 1 ? "s" : ""}
                           {n > 0 && <> · {fmtBRL(totalDe(c.id))}</>}
                         </p>
@@ -135,7 +135,7 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
                   <div className="flex shrink-0 gap-0.5 opacity-60 transition group-hover:opacity-100">
                     <button
                       onClick={() => setCorAberta(corAberta === c.id ? null : c.id)}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
                       aria-label="Trocar cor"
                       title="Trocar cor"
                     >
@@ -143,7 +143,7 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
                     </button>
                     <button
                       onClick={() => setEditando({ id: c.id, nome: c.nome })}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
                       aria-label="Renomear"
                       title="Renomear"
                     >
@@ -155,7 +155,7 @@ export function PaginaCategorias({ espaco, atualizar, avisar }) {
                           return avisar("Essa categoria tem lançamentos. Mova-os antes de excluir.", true);
                         atualizar((esp) => ({ ...esp, categorias: esp.categorias.filter((x) => x.id !== c.id) }));
                       }}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
                       aria-label="Excluir"
                       title="Excluir"
                     >

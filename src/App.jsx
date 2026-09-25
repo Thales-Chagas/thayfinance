@@ -10,6 +10,9 @@ import { menorData, gerarProximasOcorrencias, estenderRecorrencias } from "./lib
 import { SEED, espacoVazio, dadosVazios, normalizarDados } from "./lib/dados";
 import { storageGet, storageSet, hashPin } from "./lib/armazenamento";
 import { serializarBackup, lerBackup, nomeArquivoBackup } from "./lib/backup";
+import { useConfirmar } from "./components/Confirmar";
+import { useTecladoVirtual } from "./components/Sheet";
+import { Toast } from "./components/Toast";
 import { gradientePorNome } from "./lib/cores";
 import { CropFotoModal } from "./components/CropFotoModal";
 import { PaginaTransacoes } from "./paginas/PaginaTransacoes";
@@ -57,6 +60,10 @@ export default function App() {
   const [mostrarTour, setMostrarTour] = useState(false);
   const dirtyRef = useRef(false);
   const toastTimer = useRef(null);
+  const toastRef = useRef(null);
+  const [tentativa, setTentativa] = useState(0); // nova tentativa de envio à nuvem
+  const confirmar = useConfirmar();
+  useTecladoVirtual();
   const fileRef = useRef(null);
   const fotoTrocaRef = useRef(null);
 
@@ -193,16 +200,16 @@ export default function App() {
           await sincronizar(userId, ultimoSyncRef.current, data);
           ultimoSyncRef.current = data;
           setStatus("saved");
-          showToast("Salvo na nuvem ✓");
+          avisoDeFundo("Salvo na nuvem ✓");
         } catch (e) {
           console.error("erro ao sincronizar com a nuvem:", e);
           setStatus("error");
-          showToast("Não consegui salvar na nuvem. Vou tentar de novo.", true);
-          // não atualiza ultimoSyncRef → tenta de novo na próxima mudança
+          avisoDeFundo("Sem conexão com a nuvem. Guardei no aparelho e envio quando a internet voltar.", true);
+          // não atualiza ultimoSyncRef → tenta de novo ao reconectar ou na próxima mudança
         }
       } else if (okLocal) {
         setStatus("saved");
-        showToast("Salvo ✓");
+        avisoDeFundo("Salvo ✓");
       } else {
         setStatus("error");
         showToast("Erro ao salvar. Tente novamente.", true);
@@ -210,12 +217,46 @@ export default function App() {
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, loaded, nuvemPronta, userId]);
+  }, [data, loaded, nuvemPronta, userId, tentativa]);
 
-  function showToast(msg, isError = false, ms = 1800) {
+  // Falhou o envio pra nuvem? Tenta de novo quando a internet volta ou quando
+  // o app volta a ficar visível. Os dados já estão guardados no aparelho.
+  useEffect(() => {
+    if (status !== "error") return;
+    const tentar = () => {
+      if (navigator.onLine !== false && document.visibilityState === "visible") {
+        dirtyRef.current = true;
+        setTentativa((n) => n + 1);
+      }
+    };
+    window.addEventListener("online", tentar);
+    document.addEventListener("visibilitychange", tentar);
+    return () => {
+      window.removeEventListener("online", tentar);
+      document.removeEventListener("visibilitychange", tentar);
+    };
+  }, [status]);
+
+  // acao = { rotulo, fn } mostra um botão no aviso (ex.: "Desfazer")
+  function showToast(msg, isError = false, ms = 1800, acao = null) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ msg, isError });
-    toastTimer.current = setTimeout(() => setToast(null), ms);
+    const t = { id: Date.now(), msg, isError, acao };
+    toastRef.current = t;
+    setToast(t);
+    toastTimer.current = setTimeout(() => {
+      toastRef.current = null;
+      setToast(null);
+    }, acao ? Math.max(ms, 5000) : ms);
+  }
+  function fecharToast() {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastRef.current = null;
+    setToast(null);
+  }
+  // Avisos automáticos (salvamento) não apagam um aviso com "Desfazer".
+  function avisoDeFundo(msg, isError = false) {
+    if (toastRef.current?.acao && !isError) return;
+    showToast(msg, isError, isError ? 5000 : 1800);
   }
 
   // Renova as recorrências sem término: ao abrir o app (com os dados certos já
@@ -386,7 +427,12 @@ export default function App() {
   }
 
   async function esqueciPin() {
-    if (!window.confirm("Redefinir o PIN? Seus dados financeiros NÃO serão apagados — você só vai criar um novo PIN.")) return;
+    const ok = await confirmar({
+      titulo: "Redefinir o PIN?",
+      mensagem: "Seus dados financeiros NÃO serão apagados — você só vai criar um novo PIN.",
+      confirmar: "Redefinir PIN",
+    });
+    if (!ok) return;
     await storageSet(loginKey(userId), "");
     setLogin(null);
     setAuth("setup");
@@ -494,9 +540,13 @@ export default function App() {
         const jaMigrou = (await storageGet(MIGR_KEY + userId)) === "1";
 
         if (txLocais > 0 && !jaMigrou) {
-          const ok = window.confirm(
-            "Encontramos os dados deste aparelho. Deseja enviá-los para a sua conta na nuvem?\n\nNada será apagado — eles ficam junto com o que você lançou pelo robô do Telegram.",
-          );
+          const ok = await confirmar({
+            titulo: "Enviar os dados deste aparelho?",
+            mensagem:
+              "Encontramos lançamentos guardados neste aparelho. Deseja enviá-los para a sua conta na nuvem?\n\nNada será apagado — eles ficam junto com o que você lançou pelo robô do Telegram.",
+            confirmar: "Enviar para a nuvem",
+            cancelar: "Agora não",
+          });
           if (ok) {
             // passa os dados da nuvem p/ casar categorias por nome (não duplicar)
             const res = await migrarLocalParaNuvem(userId, locais, dadosNuvem);
@@ -589,7 +639,12 @@ export default function App() {
       if (modoNuvemRef.current && userId) {
         // Logado na nuvem: SOMA o backup à conta com dedupe (categorias
         // iguais por nome não duplicam), em vez de substituir o aparelho.
-        if (!window.confirm("Enviar este backup para a sua conta na nuvem?\n\nEle será somado ao que já existe — categorias com o mesmo nome não duplicam, e nada é apagado.")) return;
+        const ok = await confirmar({
+          titulo: "Enviar este backup?",
+          mensagem: "Ele será somado ao que já existe na sua conta — categorias com o mesmo nome não duplicam, e nada é apagado.",
+          confirmar: "Enviar backup",
+        });
+        if (!ok) return;
         setStatus("saving");
         try {
           const res = await migrarLocalParaNuvem(userId, dados, data);
@@ -606,7 +661,13 @@ export default function App() {
           showToast("A nuvem recusou o envio: " + detalhe, true, 12000);
         }
       } else {
-        if (!window.confirm("Importar este backup? Os dados atuais deste aparelho serão substituídos pelos do arquivo.")) return;
+        const ok = await confirmar({
+          titulo: "Importar este backup?",
+          mensagem: "Os dados atuais deste aparelho serão substituídos pelos do arquivo.",
+          confirmar: "Substituir e importar",
+          perigo: true,
+        });
+        if (!ok) return;
         dirtyRef.current = true;
         setData(dados);
         showToast("Backup importado ✓");
@@ -649,7 +710,7 @@ export default function App() {
 
   if (auth === "init") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-400 dark:bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500 dark:text-slate-400 dark:bg-slate-950">
         <Loader2 size={20} className="animate-spin" />
       </div>
     );
@@ -723,7 +784,7 @@ export default function App() {
           <img src={emblemaUrl} alt="" className="h-10 w-10 object-contain" />
           <div>
             <p className="text-base font-bold leading-tight text-slate-800 dark:text-slate-100">{saudacao}</p>
-            <p className="text-xs text-slate-400">Controle financeiro</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Controle financeiro</p>
           </div>
         </div>
         <div className="px-3 pb-2">{seletorModo}</div>
@@ -757,7 +818,7 @@ export default function App() {
             </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{login?.nome}</p>
-              <button onClick={() => fotoTrocaRef.current?.click()} className="text-[11px] text-slate-400 underline-offset-2 hover:underline">
+              <button onClick={() => fotoTrocaRef.current?.click()} className="text-xs text-slate-500 dark:text-slate-400 underline-offset-2 hover:underline">
                 Trocar foto
               </button>
             </div>
@@ -765,7 +826,7 @@ export default function App() {
               onClick={sair}
               aria-label="Sair"
               title="Sair"
-              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800 dark:hover:text-red-400"
+              className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800 dark:hover:text-red-400"
             >
               <LogOut size={16} />
             </button>
@@ -825,7 +886,7 @@ export default function App() {
 
             {usaMes ? (
               <div className="flex items-center gap-1.5">
-                <button onClick={() => stepMonth(-1)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300" aria-label="Mês anterior">
+                <button onClick={() => stepMonth(-1)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300" aria-label="Mês anterior">
                   <ChevronLeft size={18} />
                 </button>
                 <select
@@ -850,7 +911,7 @@ export default function App() {
                     </option>
                   ))}
                 </select>
-                <button onClick={() => stepMonth(1)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300" aria-label="Próximo mês">
+                <button onClick={() => stepMonth(1)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300" aria-label="Próximo mês">
                   <ChevronRight size={18} />
                 </button>
               </div>
@@ -862,7 +923,7 @@ export default function App() {
               <button
                 onClick={() => setEscuro((e) => !e)}
                 aria-label="Alternar modo claro/escuro"
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
               >
                 {escuro ? <Sun size={18} /> : <Moon size={18} />}
               </button>
@@ -875,7 +936,7 @@ export default function App() {
                     ? "bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400"
                     : status === "saved"
                     ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
-                    : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500")
+                    : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500")
                 }
               >
                 {status === "saving" ? (
@@ -903,7 +964,7 @@ export default function App() {
                     "rounded-lg p-1.5 transition md:hidden " +
                     (login?.bioCredId
                       ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
-                      : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300")
+                      : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300")
                   }
                   aria-label={login?.bioCredId ? "Desativar Face ID" : "Ativar Face ID / digital"}
                   title={login?.bioCredId ? "Face ID / digital ativo" : "Ativar Face ID / digital"}
@@ -916,13 +977,13 @@ export default function App() {
                   <Send size={18} />
                 </button>
               )}
-              <button onClick={exportData} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 md:hidden" aria-label="Exportar dados">
+              <button onClick={exportData} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 md:hidden" aria-label="Exportar dados">
                 <Download size={18} />
               </button>
-              <button onClick={() => fileRef.current?.click()} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 md:hidden" aria-label="Importar dados">
+              <button onClick={() => fileRef.current?.click()} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 md:hidden" aria-label="Importar dados">
                 <Upload size={18} />
               </button>
-              <button onClick={sair} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800 dark:hover:text-red-400 md:hidden" aria-label="Sair">
+              <button onClick={sair} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800 dark:hover:text-red-400 md:hidden" aria-label="Sair">
                 <LogOut size={18} />
               </button>
             </div>
@@ -932,14 +993,14 @@ export default function App() {
         <main className="mx-auto max-w-5xl px-4 pb-28 pt-5 md:pb-10">
           <h1 className="mb-4 text-lg font-bold text-slate-800 dark:text-slate-100">
             {viewTitle}
-            <span className="ml-2 text-sm font-normal text-slate-400">
+            <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
               {empresarial ? "Empresarial" : "Pessoal"}
               {usaMes ? ` · ${MESES[mesIdx]} de ${ano}` : ""}
             </span>
           </h1>
 
           {!loaded ? (
-            <div className="flex items-center justify-center gap-2 py-20 text-slate-400">
+            <div className="flex items-center justify-center gap-2 py-20 text-slate-500 dark:text-slate-400">
               <Loader2 size={18} className="animate-spin" /> Carregando seus dados...
             </div>
           ) : (
@@ -1019,8 +1080,8 @@ export default function App() {
               key={n.id}
               onClick={() => setView(n.id)}
               className={
-                "flex min-w-[72px] flex-1 flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition " +
-                (view === n.id ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500")
+                "flex min-w-[72px] flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition " +
+                (view === n.id ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-500")
               }
             >
               <n.icon size={19} />
@@ -1087,17 +1148,7 @@ export default function App() {
         }}
       />
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className={
-            "fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg md:bottom-6 " +
-            (toast.isError ? "bg-red-500" : "bg-emerald-600")
-          }
-        >
-          {toast.msg}
-        </div>
-      )}
+      <Toast toast={toast} onFechar={fecharToast} />
     </div>
   );
 }

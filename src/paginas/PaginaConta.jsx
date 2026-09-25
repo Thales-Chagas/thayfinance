@@ -62,7 +62,7 @@ export function CartaoNotificacoes({ userId, showToast }) {
           <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">
             Notificações no celular
           </h3>
-          <p className="mt-0.5 text-sm text-slate-400">{descricao}</p>
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{descricao}</p>
         </div>
         {suporte === "ok" && ativa !== undefined && (
           <button
@@ -135,7 +135,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
         )}
         <div className="min-w-0">
           <p className="truncate text-lg font-bold text-slate-800 dark:text-slate-100">{login?.nome || "Minha conta"}</p>
-          <p className="truncate text-sm text-slate-400">{email || "Conta local (sem nuvem)"}</p>
+          <p className="truncate text-sm text-slate-500 dark:text-slate-400">{email || "Conta local (sem nuvem)"}</p>
         </div>
       </div>
 
@@ -155,7 +155,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
         </Linha>
         <Linha rotulo="E-mail da conta">{email || "—"}</Linha>
         <Linha rotulo="Identificador">
-          <span className="font-mono text-xs text-slate-400">{userId ? userId.slice(0, 8) + "…" : "—"}</span>
+          <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{userId ? userId.slice(0, 8) + "…" : "—"}</span>
         </Linha>
       </div>
 
@@ -164,7 +164,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Dicas do app</h3>
-            <p className="mt-0.5 text-sm text-slate-400">
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
               Instalar no celular, Face ID / digital e o robô do Telegram.
             </p>
           </div>
@@ -182,7 +182,7 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Bot do Telegram</h3>
-            <p className="mt-0.5 text-sm text-slate-400">
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
               {tg === undefined ? "Verificando..." : tg ? "Conectado ✅" : "Não conectado"}
             </p>
           </div>

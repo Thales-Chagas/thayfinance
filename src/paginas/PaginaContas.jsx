@@ -49,7 +49,7 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
     if (d < 0) return { texto: d === -1 ? "Venceu ontem" : `Venceu há ${-d} dias`, cor: "font-semibold text-red-500" };
     if (d === 0) return { texto: "Vence hoje", cor: "font-semibold text-amber-500" };
     if (d <= 7) return { texto: `Vence em ${d} dia${d > 1 ? "s" : ""} · ${fmtData(t.data)}`, cor: "font-semibold text-amber-500" };
-    return { texto: "Vence em " + fmtData(t.data), cor: "text-slate-400" };
+    return { texto: "Vence em " + fmtData(t.data), cor: "text-slate-500 dark:text-slate-400" };
   }
 
   // Info de parcelas p/ o popup: só quando a série tem data final (senão null).
@@ -82,14 +82,14 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
         </button>
         <button
           onClick={() => setForm(t)}
-          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+          className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
           aria-label="Editar"
         >
           <Pencil size={15} />
         </button>
         <button
           onClick={() => setExcluindo(t)}
-          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+          className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
           aria-label="Excluir"
         >
           <Trash2 size={15} />
@@ -119,7 +119,7 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
           <p className={"flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs " + venc.cor}>
             {venc.texto}
             {t.recorrencia && (
-              <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+              <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
                 <Repeat size={10} /> {rotuloRecorrencia(t.recorrencia)}
               </span>
             )}
@@ -144,7 +144,7 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
       ["Vencidas", (t) => t.data < hoje, "text-red-500"],
       ["Vence hoje", (t) => t.data === hoje, "text-amber-500"],
       ["Próximos 7 dias", (t) => t.data > hoje && t.data <= em7, "text-amber-500/90"],
-      ["Mais adiante", (t) => t.data > em7, "text-slate-400"],
+      ["Mais adiante", (t) => t.data > em7, "text-slate-500 dark:text-slate-400"],
     ]
       .map(([rotulo, cond, cor]) => [rotulo, lista.filter(cond), cor])
       .filter(([, itens]) => itens.length > 0);
@@ -165,7 +165,7 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
             <span className="rounded-2xl bg-slate-100 p-3 text-slate-300 dark:bg-slate-800 dark:text-slate-600">
               <CalendarClock size={24} />
             </span>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               {filtro === "todas" ? "Nada pendente por aqui. 🎉" : "Nada neste filtro."}
             </p>
             <button
@@ -179,7 +179,7 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
           <div className="space-y-3">
             {secoes.map(([rotulo, itens, cor]) => (
               <div key={rotulo}>
-                <p className={"mb-0.5 text-[11px] font-semibold uppercase tracking-wide " + cor}>
+                <p className={"mb-0.5 text-xs font-semibold uppercase tracking-wide " + cor}>
                   {rotulo} · {itens.length}
                 </p>
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -202,7 +202,7 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
         <div className="pointer-events-none absolute -right-12 -top-16 h-52 w-52 rounded-full bg-white/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-20 left-1/3 h-44 w-44 rounded-full bg-teal-300/10 blur-2xl" />
         <div className="relative">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-emerald-100/90">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-emerald-100/90">
             <CalendarClock size={13} /> Contas a pagar &amp; receber
           </p>
           <div className="mt-3 grid grid-cols-2 gap-4 sm:max-w-md">
@@ -217,7 +217,7 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
               </p>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+          <div className="mt-4 flex flex-wrap gap-1.5 text-xs font-semibold">
             {vencidas.length > 0 && (
               <button
                 onClick={() => setFiltro("vencidas")}

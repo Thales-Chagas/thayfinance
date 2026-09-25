@@ -101,13 +101,13 @@ export function CropFotoModal({ file, onConfirmar, onFechar }) {
               }}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-slate-400">
+            <div className="flex h-full items-center justify-center text-slate-500 dark:text-slate-400">
               <Loader2 size={20} className="animate-spin" />
             </div>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-slate-400">Zoom</span>
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Zoom</span>
           <input
             type="range"
             min="1"
@@ -118,7 +118,7 @@ export function CropFotoModal({ file, onConfirmar, onFechar }) {
             className="flex-1 accent-emerald-600"
           />
         </div>
-        <p className="text-center text-xs text-slate-400">
+        <p className="text-center text-xs text-slate-500 dark:text-slate-400">
           Arraste a foto para enquadrar e use o zoom. O círculo mostra o que vai aparecer.
         </p>
         {erro && (

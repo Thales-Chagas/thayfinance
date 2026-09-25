@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Check, Plus, Pencil, Trash2 } from "lucide-react";
 import { uid, fmtBRL } from "../lib/formato";
 import { gradientePorNome, cssGrad } from "../lib/cores";
+import { useConfirmar } from "../components/Confirmar";
 import { Card, BotaoPrimario, CurrencyField, inputCls, Campo, Modal } from "../components/ui";
 
 /* ============================================================
@@ -49,6 +50,7 @@ export function AnelProgresso({ pct, g, completa }) {
 }
 
 export function PaginaMetas({ espaco, atualizar }) {
+  const confirmar = useConfirmar();
   const [form, setForm] = useState(null);
 
   function FormMeta({ inicial, onFechar }) {
@@ -108,7 +110,7 @@ export function PaginaMetas({ espaco, atualizar }) {
           <div className="py-10 text-center">
             <p className="mb-1 text-3xl">🎯</p>
             <p className="text-sm font-medium text-slate-500 dark:text-slate-300">Nenhuma meta ainda</p>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Crie uma meta de economia — uma viagem, uma reserva, um sonho — e acompanhe o progresso aqui.
             </p>
           </div>
@@ -133,17 +135,17 @@ export function PaginaMetas({ espaco, atualizar }) {
                     <p className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">{m.nome}</p>
                     <p className="mt-1 text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">
                       {fmtBRL(m.atual)}
-                      <span className="ml-1 text-xs font-normal text-slate-400">de {fmtBRL(m.alvo)}</span>
+                      <span className="ml-1 text-xs font-normal text-slate-500 dark:text-slate-400">de {fmtBRL(m.alvo)}</span>
                     </p>
                     {completa ? (
                       <span
-                        className="mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white"
+                        className="mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold text-white"
                         style={{ background: cssGrad(g) }}
                       >
                         Meta alcançada! 🎉
                       </span>
                     ) : (
-                      <p className="mt-1 text-xs text-slate-400">
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                         Faltam <b className="text-slate-500 dark:text-slate-300">{fmtBRL(falta)}</b>
                       </p>
                     )}
@@ -151,18 +153,18 @@ export function PaginaMetas({ espaco, atualizar }) {
                   <div className="flex shrink-0 flex-col gap-0.5 opacity-60 transition group-hover:opacity-100">
                     <button
                       onClick={() => setForm(m)}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
                       aria-label="Editar"
                       title="Editar"
                     >
                       <Pencil size={14} />
                     </button>
                     <button
-                      onClick={() => {
-                        if (window.confirm("Excluir esta meta?"))
+                      onClick={async () => {
+                        if (await confirmar({ titulo: "Excluir esta meta?", mensagem: `A meta "${m.nome}" será apagada.`, confirmar: "Excluir", perigo: true }))
                           atualizar((esp) => ({ ...esp, metas: esp.metas.filter((x) => x.id !== m.id) }));
                       }}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                      className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
                       aria-label="Excluir"
                       title="Excluir"
                     >

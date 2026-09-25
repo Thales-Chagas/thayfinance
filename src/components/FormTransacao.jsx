@@ -148,7 +148,7 @@ export function FormTransacao({ tipo, inicial, espaco, empresarial, statusPadrao
                 />
               </div>
               <SeletorGradiente valor={novaCor} sugestao={sugestaoCat} onChange={setNovaCor} />
-              <p className="text-[11px] text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 {novaCor
                   ? `Cor escolhida: ${gradPorId(novaCor)?.nome}`
                   : `Cor automática pela categoria: ${sugestaoCat.nome} — toque numa bolinha pra trocar`}
@@ -241,7 +241,7 @@ export function FormTransacao({ tipo, inicial, espaco, empresarial, statusPadrao
               <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Repetir lançamento
               </span>
-              <span className="block text-[11px] leading-snug text-slate-400">
+              <span className="block text-xs leading-snug text-slate-500 dark:text-slate-400">
                 {recAtiva
                   ? `${rotuloRecorrencia({ tipo: recTipo, cada: recCada })} · ${recFim ? "até " + fmtData(recFim) : "sem término"}`
                   : "Aluguel, mensalidade, assinatura… eu programo os próximos vencimentos."}
@@ -325,23 +325,23 @@ export function FormTransacao({ tipo, inicial, espaco, empresarial, statusPadrao
 
               {previa && (
                 <div className="rounded-xl border border-emerald-100 bg-white/80 p-2.5 dark:border-emerald-900/60 dark:bg-slate-900/50">
-                  <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                  <p className="mb-1.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
                     <CalendarDays size={12} /> Próximos vencimentos
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {previa.datas.map((d) => (
                       <span
                         key={d}
-                        className="rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold tabular-nums text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                        className="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold tabular-nums text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
                       >
                         {fmtData(d)}
                       </span>
                     ))}
                     {(previa.total === null || previa.total > previa.datas.length) && (
-                      <span className="px-1 py-1 text-[11px] text-slate-400">…</span>
+                      <span className="px-1 py-1 text-xs text-slate-500 dark:text-slate-400">…</span>
                     )}
                   </div>
-                  <p className="mt-1.5 text-[11px] leading-snug text-slate-400">
+                  <p className="mt-1.5 text-xs leading-snug text-slate-500 dark:text-slate-400">
                     {previa.total !== null
                       ? `${previa.estourou ? "Mais de " : ""}${previa.total} lançamento${previa.total > 1 ? "s" : ""} até ${fmtData(recFim)}.`
                       : "Sem data final — deixo sempre os próximos 12 meses programados."}
@@ -350,7 +350,7 @@ export function FormTransacao({ tipo, inicial, espaco, empresarial, statusPadrao
               )}
 
               {inicial?.id && recInicial && recMudou && (
-                <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
+                <p className="text-xs leading-snug text-amber-600 dark:text-amber-400">
                   A mudança vale desta conta em diante — as anteriores ficam como estão.
                 </p>
               )}

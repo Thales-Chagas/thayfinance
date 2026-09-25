@@ -141,7 +141,7 @@ export function PaginaDashboard({ espaco, ano, mesIdx, escuro, irPara }) {
         <Card>
           <SectionTitle
             right={
-              <div className="flex items-center gap-3 text-[11px] text-slate-400">
+              <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                 <span className="flex items-center gap-1.5">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: "linear-gradient(180deg,#34d399,#059669)" }} />
                   Entradas
@@ -190,7 +190,7 @@ export function PaginaDashboard({ espaco, ano, mesIdx, escuro, irPara }) {
         <Card>
           <SectionTitle>Despesas do mês por categoria</SectionTitle>
           {pieData.length === 0 ? (
-            <div className="flex h-64 items-center justify-center text-sm text-slate-400">
+            <div className="flex h-64 items-center justify-center text-sm text-slate-500 dark:text-slate-400">
               Sem despesas pagas neste mês.
             </div>
           ) : (
@@ -225,7 +225,7 @@ export function PaginaDashboard({ espaco, ano, mesIdx, escuro, irPara }) {
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Total</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Total</p>
                   <p className="max-w-[7.5rem] break-words text-center text-sm font-bold text-slate-700 dark:text-slate-100">
                     {fmtBRL(totalPie)}
                   </p>
@@ -237,7 +237,7 @@ export function PaginaDashboard({ espaco, ano, mesIdx, escuro, irPara }) {
                   <div key={p.name} className="flex items-center gap-2 rounded-lg px-2 py-1 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/60">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.gCss }} />
                     <span className="min-w-0 flex-1 truncate font-medium text-slate-600 dark:text-slate-300">{p.name}</span>
-                    <span className="tabular-nums text-slate-400">{((p.value / totalPie) * 100).toFixed(0)}%</span>
+                    <span className="tabular-nums text-slate-500 dark:text-slate-400">{((p.value / totalPie) * 100).toFixed(0)}%</span>
                     <span className="w-20 text-right font-semibold tabular-nums text-slate-600 dark:text-slate-200">{fmtBRL(p.value)}</span>
                   </div>
                 ))}

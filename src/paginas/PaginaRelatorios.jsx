@@ -112,7 +112,7 @@ ${htmlTabela(["Mês", "Receitas", "Despesas", "Lucro", "Acumulado"], anual.map((
     <Card>
       <SectionTitle right={<span className={"text-xs font-bold " + cor}>{fmtBRL(total)}</span>}>{titulo}</SectionTitle>
       {dados.length === 0 ? (
-        <p className="py-4 text-center text-sm text-slate-400">Nada neste mês.</p>
+        <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">Nada neste mês.</p>
       ) : (
         <div className="divide-y divide-slate-50 dark:divide-slate-800">
           {dados.map(([n, v]) => (
@@ -186,7 +186,7 @@ ${htmlTabela(["Mês", "Receitas", "Despesas", "Lucro", "Acumulado"], anual.map((
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-400 dark:border-slate-800">
+                <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-400 dark:border-slate-800">
                   <th className="py-2 pr-2">Mês</th>
                   <th className="py-2 pr-2 text-right">Receitas</th>
                   <th className="py-2 pr-2 text-right">Despesas</th>
@@ -203,7 +203,7 @@ ${htmlTabela(["Mês", "Receitas", "Despesas", "Lucro", "Acumulado"], anual.map((
                     <td
                       className={
                         "py-2 pr-2 text-right font-medium tabular-nums " +
-                        (m.lucro > 0 ? "text-emerald-600" : m.lucro < 0 ? "text-red-500" : "text-slate-400")
+                        (m.lucro > 0 ? "text-emerald-600" : m.lucro < 0 ? "text-red-500" : "text-slate-500 dark:text-slate-400")
                       }
                     >
                       {m.rec || m.desp ? fmtBRL(m.lucro) : "—"}
@@ -237,7 +237,7 @@ ${htmlTabela(["Mês", "Receitas", "Despesas", "Lucro", "Acumulado"], anual.map((
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
             O "Acumulado" carrega o resultado de cada mês para o seguinte, mesmo quando negativo
             {saldoAnterior !== 0 ? `, incluindo ${fmtBRL(saldoAnterior)} vindos dos anos anteriores` : ""}.
           </p>

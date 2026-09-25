@@ -57,7 +57,7 @@ export function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci,
       <button
         onClick={onTema}
         aria-label="Alternar modo claro/escuro"
-        className="fixed right-4 top-4 rounded-full border border-slate-200 bg-white p-2.5 text-slate-400 transition hover:text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:hover:text-slate-300"
+        className="fixed right-4 top-4 rounded-full border border-slate-200 bg-white p-2.5 text-slate-500 dark:text-slate-400 transition hover:text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:hover:text-slate-300"
       >
         {escuro ? <Sun size={18} /> : <Moon size={18} />}
       </button>
@@ -76,7 +76,7 @@ export function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci,
           <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">
             {modo === "lock" ? `Olá, ${nome}!` : "Bem-vinda ao Thayfinance"}
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {modo === "lock" ? "Digite seu PIN para entrar" : "Vamos preparar seu app em 10 segundos"}
           </p>
         </div>
@@ -109,12 +109,12 @@ export function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci,
                 {fotoNova ? (
                   <img src={fotoNova} alt="" className="h-20 w-20 rounded-full border-2 border-emerald-500 object-cover" />
                 ) : (
-                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-slate-400 dark:border-slate-600">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-slate-500 dark:text-slate-400 dark:border-slate-600">
                     <Camera size={24} />
                   </div>
                 )}
               </button>
-              <span className="text-xs text-slate-400">Foto (opcional) — toque para escolher</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">Foto (opcional) — toque para escolher</span>
             </div>
             <CampoLogin
               label="Como você quer ser chamada?"
@@ -154,7 +154,7 @@ export function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci,
             <button type="submit" className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700">
               Começar
             </button>
-            <p className="text-center text-xs text-slate-400">O PIN fica guardado só neste aparelho.</p>
+            <p className="text-center text-xs text-slate-500 dark:text-slate-400">O PIN fica guardado só neste aparelho.</p>
           </form>
         ) : (
           <form onSubmit={desbloquear} className="space-y-4">
@@ -171,7 +171,7 @@ export function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci,
                 >
                   <ScanFace size={18} /> Entrar com Face ID / digital
                 </button>
-                <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                   <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
                   ou use o PIN
                   <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
@@ -196,7 +196,7 @@ export function TelaLogin({ modo, nome, foto, onCriar, onDesbloquear, onEsqueci,
             >
               {verificando ? "Verificando..." : "Entrar"}
             </button>
-            <button type="button" onClick={onEsqueci} className="w-full text-center text-xs text-slate-400 underline-offset-2 hover:underline">
+            <button type="button" onClick={onEsqueci} className="w-full text-center text-xs text-slate-500 dark:text-slate-400 underline-offset-2 hover:underline">
               Esqueci o PIN
             </button>
           </form>

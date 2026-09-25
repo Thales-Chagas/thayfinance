@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Check, Plus, Pencil, Trash2 } from "lucide-react";
 import { uid } from "../lib/formato";
+import { useConfirmar } from "../components/Confirmar";
 import { Card, BotaoPrimario, inputCls, Campo, Modal } from "../components/ui";
 
 /* ============================================================
@@ -8,6 +9,7 @@ import { Card, BotaoPrimario, inputCls, Campo, Modal } from "../components/ui";
    ============================================================ */
 
 export function PaginaCadastro({ titulo, singular, itens, comContato, atualizarLista, extraInfo }) {
+  const confirmar = useConfirmar();
   const [form, setForm] = useState(null);
 
   function FormItem({ inicial, onFechar }) {
@@ -60,28 +62,28 @@ export function PaginaCadastro({ titulo, singular, itens, comContato, atualizarL
       </div>
       <Card>
         {itens.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-400">Nenhum cadastro ainda.</p>
+          <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Nenhum cadastro ainda.</p>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {itens.map((it) => (
               <div key={it.id} className="flex items-center gap-2 py-2.5">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{it.nome}</p>
-                  <p className="truncate text-xs text-slate-400">
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                     {extraInfo
                       ? extraInfo(it)
                       : [it.telefone, it.email, it.obs].filter(Boolean).join(" · ") || "—"}
                   </p>
                 </div>
-                <button onClick={() => setForm(it)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Editar">
+                <button onClick={() => setForm(it)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Editar">
                   <Pencil size={15} />
                 </button>
                 <button
-                  onClick={() => {
-                    if (window.confirm(`Excluir ${it.nome}?`))
+                  onClick={async () => {
+                    if (await confirmar({ titulo: `Excluir ${it.nome}?`, mensagem: `O cadastro de ${it.nome} será apagado. Os lançamentos ligados a ele continuam.`, confirmar: "Excluir", perigo: true }))
                       atualizarLista((lista) => lista.filter((x) => x.id !== it.id));
                   }}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                  className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
                   aria-label="Excluir"
                 >
                   <Trash2 size={15} />

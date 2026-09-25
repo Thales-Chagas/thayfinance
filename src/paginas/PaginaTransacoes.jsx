@@ -77,7 +77,7 @@ export function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes
 
       <Card>
         {lista.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-400">
+          <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
             Nenhum lançamento em {MESES[mesIdx]} de {ano}. Toque em "{ehReceita ? "Nova receita" : "Nova despesa"}" para começar.
           </p>
         ) : (
@@ -88,10 +88,10 @@ export function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes
                   <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">
                     {t.descricao || catNome(t.categoriaId)}
                   </p>
-                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-400">
+                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
                     {fmtData(t.data)} · {catNome(t.categoriaId)}
                     {t.recorrencia && (
-                      <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                      <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
                         <Repeat size={10} /> {rotuloRecorrencia(t.recorrencia)}
                       </span>
                     )}
@@ -118,14 +118,14 @@ export function PaginaTransacoes({ tipo, espaco, empresarial, ano, mesIdx, acoes
                   )}
                   <button
                     onClick={() => setForm(t)}
-                    className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                    className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
                     aria-label="Editar"
                   >
                     <Pencil size={15} />
                   </button>
                   <button
                     onClick={() => setExcluindo(t)}
-                    className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                    className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
                     aria-label="Excluir"
                   >
                     <Trash2 size={15} />
