@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { categoriasPorUso, sugestoesDescricao, agruparPorDia, filtrarBusca, desfazerMudanca, normalizar } from "./transacoes";
+import { categoriasPorUso, sugestoesDescricao, agruparPorDia, agruparPorCategoria, filtrarBusca, desfazerMudanca, normalizar } from "./transacoes";
 import { soma, parseDinheiro } from "./formato";
 
 const cats = [
@@ -91,5 +91,14 @@ describe("desfazer", () => {
     const depois = [...base, { id: "novo" }];
     const atual = [...depois, { id: "outro" }];
     expect(desfazerMudanca(atual, base, depois).map((t) => t.id)).toEqual(["x", "y", "outro"]);
+  });
+});
+
+describe("lista agrupada por categoria", () => {
+  it("categorias com mais dinheiro primeiro, itens do mais recente ao mais antigo", () => {
+    const g = agruparPorCategoria(tx.slice(0, 5));
+    expect(g.map((x) => x.categoriaId)).toEqual(["s", "a", "t"]);
+    expect(g[1]).toMatchObject({ total: -178.5, volume: 178.5 });
+    expect(g[1].itens.map((t) => t.id)).toEqual(["3", "4"]);
   });
 });

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { User, Briefcase, Loader2, Cloud, AlertTriangle, Trash2, LogOut, Lock, Send, Lightbulb, Bell, BellOff } from "lucide-react";
-import { statusTelegram } from "../telegramLink";
+import { User, Briefcase, Loader2, Cloud, AlertTriangle, Trash2, Lock, Bell, BellOff } from "lucide-react";
 import { suportePush, assinaturaAtual, ativarPush, desativarPush } from "../push";
 
 // Aba "Minha Conta": mostra quem está logado, ONDE os dados ficam (nuvem x
@@ -90,10 +89,9 @@ export function CartaoNotificacoes({ userId, showToast }) {
   );
 }
 
-export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimparDados, onSair, showToast, onVerTour }) {
+export function PaginaConta({ sessao, userId, onLimparDados, showToast }) {
   const email = sessao?.user?.email || null;
   const naNuvem = !!sessao;
-  const [tg, setTg] = useState(undefined); // undefined=carregando | null=não | obj=sim
   const [alvoLimpar, setAlvoLimpar] = useState("pessoal"); // qual espaço limpar
   const [confirmandoLimpar, setConfirmandoLimpar] = useState(false);
 
@@ -102,18 +100,6 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
     setConfirmandoLimpar(false);
     showToast?.(`Dados ${alvoLimpar === "empresarial" ? "empresariais" : "pessoais"} apagados.`);
   }
-
-  useEffect(() => {
-    let vivo = true;
-    if (userId) {
-      statusTelegram(userId).then((v) => vivo && setTg(v)).catch(() => vivo && setTg(null));
-    } else {
-      setTg(null);
-    }
-    return () => {
-      vivo = false;
-    };
-  }, [userId]);
 
   const Linha = ({ rotulo, children }) => (
     <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0 dark:border-slate-800">
@@ -124,21 +110,6 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
 
   return (
     <div className="max-w-2xl space-y-5">
-      {/* Cartão do perfil */}
-      <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        {login?.foto ? (
-          <img src={login.foto} alt="" className="h-16 w-16 rounded-full object-cover" />
-        ) : (
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-2xl font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-            {(login?.nome || email || "?").trim().charAt(0).toUpperCase()}
-          </div>
-        )}
-        <div className="min-w-0">
-          <p className="truncate text-lg font-bold text-slate-800 dark:text-slate-100">{login?.nome || "Minha conta"}</p>
-          <p className="truncate text-sm text-slate-500 dark:text-slate-400">{email || "Conta local (sem nuvem)"}</p>
-        </div>
-      </div>
-
       {/* Onde ficam os dados */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <h3 className="mb-1 text-sm font-bold text-slate-700 dark:text-slate-200">Seus dados</h3>
@@ -157,44 +128,6 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
         <Linha rotulo="Identificador">
           <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{userId ? userId.slice(0, 8) + "…" : "—"}</span>
         </Linha>
-      </div>
-
-      {/* Dicas do app (reabre o tour de boas-vindas) */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Dicas do app</h3>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-              Instalar no celular, Face ID / digital e o robô do Telegram.
-            </p>
-          </div>
-          <button
-            onClick={onVerTour}
-            className="flex shrink-0 items-center gap-2 rounded-xl bg-emerald-50 min-h-11 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
-          >
-            <Lightbulb size={15} /> Ver dicas
-          </button>
-        </div>
-      </div>
-
-      {/* Telegram */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Bot do Telegram</h3>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-              {tg === undefined ? "Verificando..." : tg ? "Conectado ✅" : "Não conectado"}
-            </p>
-          </div>
-          {userId && (
-            <button
-              onClick={onConectarTelegram}
-              className="flex shrink-0 items-center gap-2 rounded-xl bg-emerald-50 min-h-11 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
-            >
-              <Send size={15} /> {tg ? "Gerenciar" : "Conectar"}
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Notificações push — só faz sentido logado na nuvem */}
@@ -284,14 +217,6 @@ export function PaginaConta({ login, sessao, userId, onConectarTelegram, onLimpa
         )}
       </div>
 
-      {onSair && (
-        <button
-          onClick={onSair}
-          className="flex items-center gap-2 rounded-xl border border-slate-200 min-h-11 px-4 py-2 text-sm font-medium text-slate-500 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-        >
-          <LogOut size={16} /> Sair da conta
-        </button>
-      )}
     </div>
   );
 }

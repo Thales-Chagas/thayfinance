@@ -1,22 +1,23 @@
-import { Home, ListOrdered, CalendarClock, ArrowLeftRight, Target, Tags, FileText, Users, Truck, FolderOpen, ShieldCheck } from "lucide-react";
+import { Home, ListOrdered, CalendarClock, ArrowLeftRight, Target, Tags, FileText, Users, Truck, FolderOpen, UserCog } from "lucide-react";
 
 /* ============================================================
    NAVEGAÇÃO
-   Celular: barra de baixo com 4 destinos + botão "+" no meio; o resto
-   fica em "Mais". Computador: barra lateral com tudo.
+   Celular: barra de baixo com 4 destinos + botão "+" no meio.
+   "Mais" = ferramentas de finanças. Perfil e configurações abrem pela
+   foto no topo. Computador: barra lateral com tudo.
    ============================================================ */
 
 const BASE = [
   { id: "dashboard", label: "Início", icon: Home },
   { id: "lancamentos", label: "Lançamentos", icon: ListOrdered },
-  { id: "contas", label: "Contas a pagar e receber", curto: "Contas", icon: CalendarClock },
+  { id: "contas", label: "Contas a pagar e receber", icon: CalendarClock },
   { id: "fluxo", label: "Fluxo de caixa", icon: ArrowLeftRight },
 ];
 const FIM = [
   { id: "metas", label: "Metas", icon: Target },
   { id: "categorias", label: "Categorias", icon: Tags },
   { id: "relatorios", label: "Relatórios", icon: FileText },
-  { id: "conta", label: "Conta e segurança", icon: ShieldCheck },
+  { id: "perfil", label: "Perfil e configurações", icon: UserCog },
 ];
 
 export const NAV_PESSOAL = [...BASE, ...FIM];
@@ -28,12 +29,26 @@ export const NAV_EMPRESA = [
   ...FIM,
 ];
 
-// Páginas que moram dentro de "Mais" no celular (ganham botão de voltar)
-export const DENTRO_DE_MAIS = ["fluxo", "metas", "categorias", "relatorios", "clientes", "fornecedores", "centros", "conta"];
+// De onde cada página "vem" no celular (o botão voltar leva pra lá)
+export const PAI = {
+  fluxo: "mais",
+  metas: "mais",
+  categorias: "mais",
+  relatorios: "mais",
+  clientes: "mais",
+  fornecedores: "mais",
+  centros: "mais",
+  perfil: "dashboard",
+  conta: "perfil",
+};
 
 // Aba da barra de baixo que fica acesa para cada página
 export const abaDe = (view) =>
-  view === "dashboard" || view === "lancamentos" || view === "contas" ? view : "mais";
+  view === "dashboard" || view === "lancamentos" || view === "contas" || view === "mais"
+    ? view
+    : PAI[view] === "mais"
+    ? "mais"
+    : null;
 
 // Páginas que dependem do mês escolhido
 export const USA_MES = ["dashboard", "lancamentos", "relatorios"];
@@ -49,6 +64,7 @@ export const TITULOS = {
   clientes: "Clientes",
   fornecedores: "Fornecedores",
   centros: "Centros de custo",
-  conta: "Conta e segurança",
+  conta: "Dados e notificações",
+  perfil: "Perfil",
   mais: "Mais",
 };

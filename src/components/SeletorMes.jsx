@@ -5,7 +5,7 @@ import { Sheet } from "./Sheet";
 
 // Chip "‹ Set 2026 ›": setas de 44px para o mês vizinho; tocar no nome abre
 // uma grade com os 12 meses e o ano (sem limite de anos).
-export function SeletorMes({ ano, mesIdx, onMudar, compacto = false }) {
+export function SeletorMes({ ano, mesIdx, onMudar, compacto = false, largo = false }) {
   const [aberto, setAberto] = useState(false);
   const [anoGrade, setAnoGrade] = useState(ano);
   const hoje = new Date();
@@ -28,7 +28,7 @@ export function SeletorMes({ ano, mesIdx, onMudar, compacto = false }) {
 
   return (
     <>
-      <div className="flex items-center rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+      <div className={"flex items-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 " + (largo ? "w-full justify-between p-0.5" : "")}>
         <button type="button" onClick={() => passo(-1)} className={seta} aria-label="Mês anterior">
           <ChevronLeft size={19} />
         </button>
@@ -38,10 +38,10 @@ export function SeletorMes({ ano, mesIdx, onMudar, compacto = false }) {
             setAnoGrade(ano);
             setAberto(true);
           }}
-          className="h-11 min-w-[5.5rem] rounded-xl px-1.5 text-sm font-bold tabular-nums text-slate-800 transition hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
+          className={"h-11 min-w-[5.5rem] rounded-xl px-1.5 font-bold tabular-nums text-slate-800 transition hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800 " + (largo ? "flex-1 text-base" : "text-sm")}
           aria-label={`Mês: ${MESES[mesIdx]} de ${ano}. Tocar para escolher outro`}
         >
-          {compacto ? `${MESES_CURTO[mesIdx]} ${String(ano).slice(2)}` : `${MESES_CURTO[mesIdx]} ${ano}`}
+          {largo ? `${MESES[mesIdx]} de ${ano}` : compacto ? `${MESES_CURTO[mesIdx]} ${String(ano).slice(2)}` : `${MESES_CURTO[mesIdx]} ${ano}`}
         </button>
         <button type="button" onClick={() => passo(1)} className={seta} aria-label="Próximo mês">
           <ChevronRight size={19} />

@@ -4,7 +4,8 @@ import { MESES } from "../lib/constantes";
 import { fmtBRL, fmtData, hojeISO, mesPrefixo, soma, rotuloDia } from "../lib/formato";
 import { rotuloRecorrencia } from "../lib/recorrencia";
 import { gradCat, gradPorId, cssGrad } from "../lib/cores";
-import { agruparPorDia, filtrarBusca } from "../lib/transacoes";
+import { agruparPorDia, agruparPorCategoria, filtrarBusca } from "../lib/transacoes";
+import { usePreferencia, SeletorAgrupamento, GrupoCategoria } from "../components/Agrupamento";
 import { Sheet } from "../components/Sheet";
 import { ModalExcluirConta } from "../components/ModaisConta";
 
@@ -42,6 +43,16 @@ export function PaginaLancamentos({ espaco, empresarial, ano, mesIdx, acoes, abr
     return filtrarBusca(l, busca, (id) => catPorId.get(id)?.nome || "");
   }, [doMes, filtro, catFiltro, busca, catPorId]);
   const dias = useMemo(() => agruparPorDia(lista), [lista]);
+  const [agrupar, setAgrupar] = usePreferencia("financas_app_agrupar_lanc", "dia"); // dia | categoria
+  const porCategoria = useMemo(() => agruparPorCategoria(lista), [lista]);
+  const volumeTotal = porCategoria.reduce((s, g) => s + g.volume, 0);
+  const [abertas, setAbertas] = useState(() => new Set());
+  const alternarCat = (id) =>
+    setAbertas((a) => {
+      const n = new Set(a);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
 
   const FILTROS = [
     ["tudo", "Tudo"],
@@ -126,7 +137,18 @@ export function PaginaLancamentos({ espaco, empresarial, ano, mesIdx, acoes, abr
         </div>
       </div>
 
-      {/* Lista por dia */}
+      {dias.length > 0 && (
+        <SeletorAgrupamento
+          valor={agrupar}
+          onMudar={setAgrupar}
+          opcoes={[
+            ["dia", "Por dia"],
+            ["categoria", "Por categoria"],
+          ]}
+        />
+      )}
+
+      {/* Lista por dia ou por categoria */}
       {dias.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-12 text-center dark:border-slate-700">
           <p className="text-base font-semibold text-slate-700 dark:text-slate-200">
@@ -154,7 +176,30 @@ export function PaginaLancamentos({ espaco, empresarial, ano, mesIdx, acoes, abr
         </div>
       ) : (
         <div className="space-y-4">
-          {dias.map(({ data, itens, total }) => (
+          {agrupar === "categoria" && (
+            <div className="space-y-3">
+              {porCategoria.map((g) => (
+                <GrupoCategoria
+                  key={g.categoriaId || "sem"}
+                  cat={catPorId.get(g.categoriaId)}
+                  quantidade={g.itens.length}
+                  total={g.total}
+                  participacao={volumeTotal ? g.volume / volumeTotal : 0}
+                  aberto={abertas.has(g.categoriaId)}
+                  onAlternar={() => alternarCat(g.categoriaId)}
+                >
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {g.itens.map((t) => (
+                      <li key={t.id}>
+                        <LinhaLancamento t={t} cat={catPorId.get(t.categoriaId)} subtitulo={rotuloDia(t.data, hoje)} onAbrir={() => setSelecionado(t)} />
+                      </li>
+                    ))}
+                  </ul>
+                </GrupoCategoria>
+              ))}
+            </div>
+          )}
+          {agrupar !== "categoria" && dias.map(({ data, itens, total }) => (
             <section key={data} aria-label={rotuloDia(data, hoje)}>
               <div className="mb-1.5 flex items-baseline justify-between px-1">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">{rotuloDia(data, hoje)}</h3>
@@ -255,7 +300,7 @@ export function PaginaLancamentos({ espaco, empresarial, ano, mesIdx, acoes, abr
 }
 
 // Linha da lista: área de toque inteira, descrição usando a largura toda.
-export function LinhaLancamento({ t, cat, onAbrir, direita }) {
+export function LinhaLancamento({ t, cat, onAbrir, direita, subtitulo }) {
   const nome = t.descricao || cat?.nome || "Lançamento";
   const ehReceita = t.tipo === "receita";
   const pendente = t.status === "pendente";
@@ -277,7 +322,7 @@ export function LinhaLancamento({ t, cat, onAbrir, direita }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-semibold text-slate-800 dark:text-slate-100">{nome}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-            <span className="truncate">{cat?.nome || "Sem categoria"}</span>
+            <span className="truncate">{subtitulo || cat?.nome || "Sem categoria"}</span>
             {pendente && (
               <span className="shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-300">
                 {ehReceita ? "a receber" : "a pagar"}

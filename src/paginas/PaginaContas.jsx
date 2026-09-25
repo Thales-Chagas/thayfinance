@@ -6,6 +6,8 @@ import { totalParcelas, rotuloRecorrencia } from "../lib/recorrencia";
 import { gradPorId, gradCat, cssGrad } from "../lib/cores";
 import { BotaoIcone } from "../components/ui";
 import { ModalExcluirConta, ModalDetalheConta } from "../components/ModaisConta";
+import { usePreferencia, SeletorAgrupamento, GrupoCategoria } from "../components/Agrupamento";
+import { agruparPorCategoria } from "../lib/transacoes";
 
 /* ============================================================
    CONTAS A PAGAR E RECEBER
@@ -59,6 +61,21 @@ export function PaginaContas({ espaco, empresarial, acoes, abrirLancamento }) {
   ]
     .map(([rotulo, cond, cor]) => [rotulo, lista.filter(cond), cor])
     .filter(([, itens]) => itens.length > 0);
+
+  // Agrupar por vencimento (padrão) ou por categoria
+  const [agrupar, setAgrupar] = usePreferencia("financas_app_agrupar_contas", "vencimento");
+  const porCategoria = useMemo(
+    () => agruparPorCategoria(lista).map((g) => ({ ...g, itens: [...g.itens].sort((a, b) => a.data.localeCompare(b.data)) })),
+    [lista]
+  );
+  const volumeTotal = porCategoria.reduce((s, g) => s + g.volume, 0);
+  const [abertas, setAbertas] = useState(() => new Set());
+  const alternarCat = (id) =>
+    setAbertas((a) => {
+      const n = new Set(a);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
 
   // Parcelas (só séries com data final)
   function infoParcelas(t) {
@@ -146,7 +163,18 @@ export function PaginaContas({ espaco, empresarial, acoes, abrirLancamento }) {
         </button>
       </div>
 
-      {/* Lista por urgência */}
+      {lista.length > 0 && (
+        <SeletorAgrupamento
+          valor={agrupar}
+          onMudar={setAgrupar}
+          opcoes={[
+            ["vencimento", "Por vencimento"],
+            ["categoria", "Por categoria"],
+          ]}
+        />
+      )}
+
+      {/* Lista por urgência ou por categoria */}
       {lista.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center dark:border-slate-700">
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800">
@@ -161,7 +189,38 @@ export function PaginaContas({ espaco, empresarial, acoes, abrirLancamento }) {
         </div>
       ) : (
         <div className="space-y-4">
-          {secoes.map(([rotulo, itens, cor]) => (
+          {agrupar === "categoria" && (
+            <div className="space-y-3">
+              {porCategoria.map((g) => (
+                <GrupoCategoria
+                  key={g.categoriaId || "sem"}
+                  cat={catPorId.get(g.categoriaId)}
+                  quantidade={g.itens.length}
+                  total={g.total}
+                  participacao={volumeTotal ? g.volume / volumeTotal : 0}
+                  aberto={abertas.has(g.categoriaId)}
+                  onAlternar={() => alternarCat(g.categoriaId)}
+                >
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {g.itens.map((t) => (
+                      <li key={t.id}>
+                        <LinhaConta
+                          t={t}
+                          cat={catPorId.get(t.categoriaId)}
+                          hoje={hoje}
+                          onDetalhe={() => setDetalhe(t)}
+                          onPagar={() => acoes.marcarOk(t.id)}
+                          onEditar={() => abrirLancamento({ inicial: t })}
+                          onExcluir={() => setExcluindo(t)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </GrupoCategoria>
+              ))}
+            </div>
+          )}
+          {agrupar !== "categoria" && secoes.map(([rotulo, itens, cor]) => (
             <section key={rotulo} aria-label={rotulo}>
               <div className="mb-1.5 flex items-baseline justify-between px-1">
                 <h3 className={"text-xs font-bold uppercase tracking-wide " + cor}>

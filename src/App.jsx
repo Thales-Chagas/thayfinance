@@ -22,7 +22,8 @@ import { FormTransacao } from "./components/FormTransacao";
 import { SeletorMes } from "./components/SeletorMes";
 import { Sheet } from "./components/Sheet";
 import { PaginaContas } from "./paginas/PaginaContas";
-import { NAV_PESSOAL, NAV_EMPRESA, DENTRO_DE_MAIS, abaDe, USA_MES, TITULOS } from "./lib/navegacao";
+import { NAV_PESSOAL, NAV_EMPRESA, PAI, abaDe, USA_MES, TITULOS } from "./lib/navegacao";
+import { PaginaPerfil } from "./paginas/PaginaPerfil";
 import { aplicarCorDoTema } from "./lib/pwa";
 
 // Telas usadas de vez em quando: baixadas só quando abertas (a primeira
@@ -877,7 +878,8 @@ export default function App() {
   }
 
   const aba = abaDe(view);
-  const dentroDeMais = DENTRO_DE_MAIS.includes(view);
+  const pai = PAI[view]; // página de onde esta "vem" (mostra o voltar no celular)
+  const mostraEspaco = view !== "perfil" && view !== "conta";
   const nomeEspaco = empresarial ? "Empresarial" : "Pessoal";
 
   // indicador de salvamento (ícone discreto no topo)
@@ -1037,50 +1039,68 @@ export default function App() {
       {/* Conteúdo */}
       <div className="md:pl-64">
         <header className="safe-topo sticky top-0 z-20 border-b border-slate-200/80 bg-slate-50/90 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/85">
-          <div className="mx-auto flex h-16 max-w-5xl items-center gap-2 px-4">
-            {dentroDeMais && (
+          <div className="mx-auto flex h-16 max-w-5xl items-center gap-3 px-4">
+            {pai ? (
               <button
-                onClick={() => (window.history.state?.tfView === view ? window.history.back() : irPara("mais"))}
+                onClick={() => (window.history.state?.tfView === view ? window.history.back() : irPara(pai))}
                 className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-100 active:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800 md:hidden"
                 aria-label="Voltar"
               >
-                <ChevronLeft size={22} />
+                <ChevronLeft size={24} />
+              </button>
+            ) : (
+              <button
+                onClick={() => irPara("perfil")}
+                className="shrink-0 rounded-full ring-2 ring-white transition active:scale-95 dark:ring-slate-900 md:hidden"
+                aria-label="Perfil e configurações"
+              >
+                {login?.foto ? (
+                  <img src={login.foto} alt="" className="h-10 w-10 rounded-full object-cover" />
+                ) : (
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-base font-bold text-white">
+                    {(login?.nome || "T").trim()[0].toUpperCase()}
+                  </span>
+                )}
               </button>
             )}
             <div className="min-w-0 flex-1">
               {view === "dashboard" ? (
-                <>
-                  <p className="truncate text-sm text-slate-500 dark:text-slate-400">{saudacao}</p>
-                  <button
-                    onClick={() => setEscolhendoModo(true)}
-                    className="-mx-1 -my-1.5 flex h-11 items-center gap-1 rounded-lg px-1 text-lg font-bold leading-none text-slate-800 dark:text-slate-100"
-                    aria-label={`Espaço ${nomeEspaco}. Tocar para trocar`}
-                  >
-                    {nomeEspaco} <ChevronDown size={18} className="text-slate-400" />
-                  </button>
-                </>
+                <h1 className="truncate text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{saudacao}</h1>
               ) : (
-                <>
-                  <h1 className="truncate text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{TITULOS[view]}</h1>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">{nomeEspaco}</p>
-                </>
+                <h1 className="truncate text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{TITULOS[view]}</h1>
+              )}
+              {mostraEspaco && (
+                <button
+                  onClick={() => setEscolhendoModo(true)}
+                  className="-mx-1 -my-1 flex h-7 items-center gap-0.5 rounded-lg px-1 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                  aria-label={`Espaço ${nomeEspaco}. Tocar para trocar`}
+                >
+                  {nomeEspaco} <ChevronDown size={15} />
+                </button>
               )}
             </div>
-            {usaMes && <SeletorMes ano={ano} mesIdx={mesIdx} onMudar={mudarMes} />}
-            <span className="flex h-11 w-8 shrink-0 items-center justify-center" title={statusTexto} role="img" aria-label={statusTexto}>
-              {statusIcone}
-            </span>
-            <button
-              onClick={() => setEscuro((e) => !e)}
-              aria-label="Alternar tema claro/escuro"
-              className="hidden h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200 md:flex"
-            >
-              {escuro ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
+            <div className="flex shrink-0 items-center gap-0.5 rounded-2xl border border-slate-200 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-900">
+              <button
+                onClick={() => setEscuro((e) => !e)}
+                aria-label={escuro ? "Mudar para o tema claro" : "Mudar para o tema escuro"}
+                title={escuro ? "Tema claro" : "Tema escuro"}
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-100 active:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                {escuro ? <Sun size={19} /> : <Moon size={19} />}
+              </button>
+              <span className="flex h-10 w-10 items-center justify-center" title={statusTexto} role="img" aria-label={statusTexto}>
+                {statusIcone}
+              </span>
+            </div>
           </div>
         </header>
 
         <main id="conteudo" className="pb-barra mx-auto max-w-5xl px-4 pt-4">
+          {usaMes && loaded && (
+            <div className="mb-4">
+              <SeletorMes ano={ano} mesIdx={mesIdx} onMudar={mudarMes} largo />
+            </div>
+          )}
           {!loaded ? (
             <div className="space-y-4" aria-busy="true" aria-label="Carregando seus dados">
               <div className="h-40 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />
@@ -1163,26 +1183,16 @@ export default function App() {
                 </div>
               )}
               {view === "conta" && (
-                <PaginaConta
-                  login={login}
-                  sessao={sessao}
-                  userId={userId}
-                  onConectarTelegram={() => setMostrarTelegram(true)}
-                  onLimparDados={limparEspaco}
-                  onSair={sairComConfirmacao}
-                  showToast={showToast}
-                  onVerTour={() => setMostrarTour(true)}
-                />
+                <PaginaConta sessao={sessao} userId={userId} onLimparDados={limparEspaco} showToast={showToast} />
               )}
-              {view === "mais" && (
-                <PaginaMais
+              {view === "mais" && <PaginaMais espaco={espaco} modo={modo} irPara={irPara} />}
+              {view === "perfil" && (
+                <PaginaPerfil
                   login={login}
                   email={sessao?.user?.email}
-                  modo={modo}
-                  trocarModo={trocarModo}
-                  irPara={irPara}
+                  userId={userId}
                   escuro={escuro}
-                  alternarTema={() => setEscuro((e) => !e)}
+                  definirTema={setEscuro}
                   bioDisponivel={bioDisponivel}
                   bioAtivo={!!login?.bioCredId}
                   alternarBiometria={login?.bioCredId ? desativarBiometria : ativarBiometria}
@@ -1192,7 +1202,7 @@ export default function App() {
                   onTrocarFoto={() => fotoTrocaRef.current?.click()}
                   onSair={sairComConfirmacao}
                   onVerTour={() => setMostrarTour(true)}
-                  userId={userId}
+                  irPara={irPara}
                 />
               )}
             </Suspense>

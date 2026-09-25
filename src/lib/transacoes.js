@@ -99,3 +99,21 @@ export function desfazerMudanca(atual, antes, depois) {
   for (const t of antes) if (!mapaD.has(t.id) && !presentes.has(t.id)) resultado.push(t);
   return resultado;
 }
+
+// Agrupa por categoria (as de maior valor primeiro). Dentro de cada grupo,
+// do mais recente para o mais antigo. `total` = entradas − saídas.
+export function agruparPorCategoria(lista) {
+  const grupos = new Map();
+  for (const t of lista) {
+    const chave = t.categoriaId || "";
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(t);
+  }
+  return [...grupos.entries()]
+    .map(([categoriaId, itens]) => {
+      const c = itens.reduce((s, t) => s + (t.tipo === "receita" ? 1 : -1) * Math.round((Number(t.valor) || 0) * 100), 0);
+      const bruto = itens.reduce((s, t) => s + Math.round((Number(t.valor) || 0) * 100), 0);
+      return { categoriaId, itens: [...itens].sort((a, b) => b.data.localeCompare(a.data)), total: c / 100, volume: bruto / 100 };
+    })
+    .sort((a, b) => b.volume - a.volume);
+}
