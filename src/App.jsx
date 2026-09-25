@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import emblemaUrl from "./emblema.png";
-import { User, Briefcase, ChevronLeft, ChevronRight, Download, Upload, Check, Loader2, Cloud, AlertTriangle, Moon, Sun, LogOut, Camera, ScanFace, Send } from "lucide-react";
+import { User, Briefcase, ChevronLeft, ChevronDown, Download, Upload, Check, Loader2, Cloud, CloudOff, Moon, Sun, LogOut, Camera, ScanFace, Send, Plus, Home, ListOrdered, CalendarClock, LayoutGrid } from "lucide-react";
 import { definirNomeNuvem, sairNuvem, sessaoAtual, aoMudarAuth, marcarLoginNuvem, limparLoginNuvem, loginNuvemTs } from "./cloudAuth";
 import { carregarTudo, sincronizar, migrarLocalParaNuvem } from "./cloudData";
 import { temAutenticadorPlataforma, registrarBiometria, verificarBiometria } from "./biometria";
-import { STORAGE_KEY, LOGIN_KEY, loginKey, TEMA_KEY, MIGR_KEY, URL_RECUPERACAO, NUVEM_MS, marcarDesbloqueio, limparDesbloqueio, desbloqueioRecente, TOUR_KEY, MESES, ANOS } from "./lib/constantes";
+import { STORAGE_KEY, LOGIN_KEY, loginKey, TEMA_KEY, MIGR_KEY, URL_RECUPERACAO, NUVEM_MS, marcarDesbloqueio, limparDesbloqueio, desbloqueioRecente, TOUR_KEY } from "./lib/constantes";
 import { uid, fmtBRL, somaDias, soma } from "./lib/formato";
+import { desfazerMudanca } from "./lib/transacoes";
 import { menorData, gerarProximasOcorrencias, estenderRecorrencias } from "./lib/recorrencia";
 import { SEED, espacoVazio, dadosVazios, normalizarDados } from "./lib/dados";
 import { storageGet, storageSet, hashPin } from "./lib/armazenamento";
@@ -15,8 +16,12 @@ import { useTecladoVirtual } from "./components/Sheet";
 import { Toast } from "./components/Toast";
 import { gradientePorNome } from "./lib/cores";
 import { CropFotoModal } from "./components/CropFotoModal";
-import { PaginaTransacoes } from "./paginas/PaginaTransacoes";
-import { PaginaDashboard } from "./paginas/PaginaDashboard";
+import { PaginaLancamentos } from "./paginas/PaginaLancamentos";
+import { PaginaInicio } from "./paginas/PaginaInicio";
+import { PaginaMais } from "./paginas/PaginaMais";
+import { FormTransacao } from "./components/FormTransacao";
+import { SeletorMes } from "./components/SeletorMes";
+import { Sheet } from "./components/Sheet";
 import { PaginaContas } from "./paginas/PaginaContas";
 import { PaginaFluxo } from "./paginas/PaginaFluxo";
 import { PaginaMetas } from "./paginas/PaginaMetas";
@@ -25,7 +30,7 @@ import { PaginaCadastro } from "./paginas/PaginaCadastro";
 import { PaginaRelatorios } from "./paginas/PaginaRelatorios";
 import { TelaAuth, TelaNovaSenha } from "./telas/TelaAuth";
 import { TelaLogin } from "./telas/TelaLogin";
-import { NAV_PESSOAL, NAV_EMPRESA } from "./lib/navegacao";
+import { NAV_PESSOAL, NAV_EMPRESA, DENTRO_DE_MAIS, abaDe, USA_MES, TITULOS } from "./lib/navegacao";
 import { PaginaConta } from "./paginas/PaginaConta";
 import { ModalConectarTelegram } from "./components/ModalConectarTelegram";
 import { TourBoasVindas } from "./components/TourBoasVindas";
@@ -299,53 +304,87 @@ export default function App() {
     setData((prev) => ({ ...prev, [modoAlvo]: espacoVazio(modoAlvo) }));
   }
 
+  // Aplica uma mudança nos lançamentos do espaço atual e oferece "Desfazer".
+  // `fn` precisa ser pura (ids gerados ANTES), porque o React pode chamá-la
+  // duas vezes; o registro guarda o antes/depois para desfazer por id.
+  function mudarTransacoes(fn, mensagem) {
+    const reg = { modo };
+    atualizarEspaco((esp) => {
+      const novo = fn(esp);
+      reg.antes = esp.transacoes;
+      reg.depois = novo.transacoes;
+      return novo;
+    });
+    if (mensagem) {
+      showToast(mensagem, false, 5000, {
+        rotulo: "Desfazer",
+        fn: () => {
+          if (!reg.antes) return;
+          dirtyRef.current = true;
+          setData((prev) => ({
+            ...prev,
+            [reg.modo]: { ...prev[reg.modo], transacoes: desfazerMudanca(prev[reg.modo].transacoes, reg.antes, reg.depois) },
+          }));
+          showToast("Desfeito");
+        },
+      });
+    }
+  }
+
+  const acharTx = (id) => data[modo].transacoes.find((x) => x.id === id);
+  const nomeTipo = (t) => (t?.tipo === "receita" ? (empresarial ? "Entrada" : "Receita") : "Despesa");
+
   const acoesTransacao = {
     // Salva o lançamento e cuida da recorrência:
     //  regra === undefined → não mexe na série (edição sem tocar na repetição)
     //  regra === null      → repetição desligada (encerra a série, se havia)
     //  regra = {tipo,cada,fim} → (re)programa a série a partir deste lançamento
-    salvar: (t, regra) =>
-      atualizarEspaco((esp) => {
-        const anterior = t.id ? esp.transacoes.find((x) => x.id === t.id) : null;
-        let base = t.id ? { ...t } : { ...t, id: uid() };
-        let ts = anterior
-          ? esp.transacoes.map((x) => (x.id === base.id ? base : x))
-          : [...esp.transacoes, base];
-        if (regra === undefined) return { ...esp, transacoes: ts };
+    salvar: (t, regra, info = {}) => {
+      const id = t.id || uid();
+      const grupoNovo = uid();
+      const jaExiste = !!acharTx(id);
+      mudarTransacoes(
+        (esp) => {
+          const anterior = esp.transacoes.find((x) => x.id === id) || null;
+          let base = { ...t, id };
+          let ts = anterior ? esp.transacoes.map((x) => (x.id === base.id ? base : x)) : [...esp.transacoes, base];
+          if (regra === undefined) return { ...esp, transacoes: ts };
 
-        const grupoAntigo = anterior?.recorrencia?.grupo;
-        if (grupoAntigo) {
-          // a regra mudou (ou foi desligada): some com as próximas pendentes da
-          // série antiga e encerra a regra nas que ficam (pra não renascerem)
-          ts = ts
-            .filter(
-              (x) =>
-                !(x.recorrencia?.grupo === grupoAntigo && x.id !== base.id && x.status === "pendente" && x.data > base.data)
-            )
-            .map((x) =>
-              x.id !== base.id && x.recorrencia?.grupo === grupoAntigo
-                ? { ...x, recorrencia: { ...x.recorrencia, fim: menorData(x.recorrencia.fim, somaDias(base.data, -1)) } }
-                : x
-            );
-        }
-        if (regra) {
-          // série nova (mesmo numa edição: grupo novo daqui em diante,
-          // as parcelas antigas guardam a história com a regra encerrada)
-          const r = { grupo: uid(), tipo: regra.tipo, cada: regra.cada ?? null, inicio: base.data, fim: regra.fim ?? null, n: 0 };
-          base = { ...base, recorrencia: r };
-          ts = ts.map((x) => (x.id === base.id ? base : x));
-          const ids = new Set(ts.map((x) => x.id));
-          ts = [...ts, ...gerarProximasOcorrencias(base, r, 1, ids)];
-        } else if (base.recorrencia) {
-          const { recorrencia: _r, ...semRec } = base;
-          ts = ts.map((x) => (x.id === base.id ? semRec : x));
-        }
-        return { ...esp, transacoes: ts };
-      }),
+          const grupoAntigo = anterior?.recorrencia?.grupo;
+          if (grupoAntigo) {
+            // a regra mudou (ou foi desligada): some com as próximas pendentes da
+            // série antiga e encerra a regra nas que ficam (pra não renascerem)
+            ts = ts
+              .filter(
+                (x) => !(x.recorrencia?.grupo === grupoAntigo && x.id !== base.id && x.status === "pendente" && x.data > base.data)
+              )
+              .map((x) =>
+                x.id !== base.id && x.recorrencia?.grupo === grupoAntigo
+                  ? { ...x, recorrencia: { ...x.recorrencia, fim: menorData(x.recorrencia.fim, somaDias(base.data, -1)) } }
+                  : x
+              );
+          }
+          if (regra) {
+            // série nova (mesmo numa edição: grupo novo daqui em diante,
+            // as parcelas antigas guardam a história com a regra encerrada)
+            const r = { grupo: grupoNovo, tipo: regra.tipo, cada: regra.cada ?? null, inicio: base.data, fim: regra.fim ?? null, n: 0 };
+            base = { ...base, recorrencia: r };
+            ts = ts.map((x) => (x.id === base.id ? base : x));
+            const ids = new Set(ts.map((x) => x.id));
+            ts = [...ts, ...gerarProximasOcorrencias(base, r, 1, ids)];
+          } else if (base.recorrencia) {
+            const { recorrencia: _r, ...semRec } = base;
+            ts = ts.map((x) => (x.id === base.id ? semRec : x));
+          }
+          return { ...esp, transacoes: ts };
+        },
+        jaExiste && !info.novo ? "Alterações salvas" : `${nomeTipo(t)} salva · ${fmtBRL(t.valor)}`
+      );
+    },
     // Exclui UMA conta. Se era a última programada de uma série sem término,
     // encerra a série ali — senão o app recriaria a parcela sozinho depois.
     excluir: (id) =>
-      atualizarEspaco((esp) => {
+      mudarTransacoes((esp) => {
         const alvo = esp.transacoes.find((x) => x.id === id);
         const g = alvo?.recorrencia?.grupo;
         let ts = esp.transacoes.filter((x) => x.id !== id);
@@ -361,40 +400,45 @@ export default function App() {
           }
         }
         return { ...esp, transacoes: ts };
-      }),
+      }, "Lançamento excluído"),
     // Exclui a conta E todas as próximas da mesma série (as pagas ficam).
     excluirSerie: (id) =>
-      atualizarEspaco((esp) => {
+      mudarTransacoes((esp) => {
         const alvo = esp.transacoes.find((x) => x.id === id);
         const g = alvo?.recorrencia?.grupo;
         if (!g) return { ...esp, transacoes: esp.transacoes.filter((x) => x.id !== id) };
         return {
           ...esp,
           transacoes: esp.transacoes
-            .filter(
-              (x) => x.id !== id && !(x.recorrencia?.grupo === g && x.status === "pendente" && x.data >= alvo.data)
-            )
+            .filter((x) => x.id !== id && !(x.recorrencia?.grupo === g && x.status === "pendente" && x.data >= alvo.data))
             .map((x) =>
               x.recorrencia?.grupo === g
                 ? { ...x, recorrencia: { ...x.recorrencia, fim: menorData(x.recorrencia.fim, somaDias(alvo.data, -1)) } }
                 : x
             ),
         };
-      }),
-    marcarOk: (id) =>
-      atualizarEspaco((esp) => ({
-        ...esp,
-        transacoes: esp.transacoes.map((x) => (x.id === id ? { ...x, status: "ok" } : x)),
-      })),
+      }, "Esta e as próximas foram excluídas"),
+    marcarOk: (id) => {
+      const t = acharTx(id);
+      mudarTransacoes(
+        (esp) => ({ ...esp, transacoes: esp.transacoes.map((x) => (x.id === id ? { ...x, status: "ok" } : x)) }),
+        t?.tipo === "receita" ? "Marcado como recebido" : "Marcado como pago"
+      );
+    },
+    marcarPendente: (id) => {
+      const t = acharTx(id);
+      mudarTransacoes(
+        (esp) => ({ ...esp, transacoes: esp.transacoes.map((x) => (x.id === id ? { ...x, status: "pendente" } : x)) }),
+        t?.tipo === "receita" ? "Voltou para a receber" : "Voltou para a pagar"
+      );
+    },
     // Cria uma categoria no espaço ATUAL (modo pessoal/empresarial vigente) e
     // devolve o objeto {id,nome,cor}. Fica salva só neste login (via user_id na
     // nuvem) e só neste tipo (coluna modo). Se já existir pelo nome, reaproveita.
     criarCategoria: (nome, cor) => {
       const limpo = (nome || "").trim();
       if (!limpo) return null;
-      const existente = data[modo].categorias.find(
-        (c) => c.nome.toLowerCase() === limpo.toLowerCase(),
-      );
+      const existente = data[modo].categorias.find((c) => c.nome.toLowerCase() === limpo.toLowerCase());
       if (existente) return existente;
       const nova = { id: uid(), nome: limpo, cor: cor || gradientePorNome(limpo).id };
       atualizarEspaco((esp) => ({ ...esp, categorias: [...esp.categorias, nova] }));
@@ -402,10 +446,57 @@ export default function App() {
     },
   };
 
+  // Painel de lançamento (global: o "+" abre de qualquer tela)
+  const [lancamento, setLancamento] = useState(null); // null | { tipo, inicial, statusPadrao }
+  const abrirLancamento = (opts = {}) => setLancamento({ tipo: "despesa", ...opts, chave: Date.now() });
+
+  // ---- Navegação com histórico (o "voltar" do celular volta de tela) ----
+  const [filtroLanc, setFiltroLanc] = useState("tudo");
+  const [escolhendoModo, setEscolhendoModo] = useState(false);
+  function irPara(v) {
+    if (v === "receitas" || v === "despesas") {
+      setFiltroLanc(v === "receitas" ? "receita" : "despesa");
+      v = "lancamentos";
+    } else if (v === "lancamentos") setFiltroLanc("tudo");
+    if (v === view) return;
+    try {
+      window.history.pushState({ tfView: v }, "");
+    } catch {
+      /* sem histórico */
+    }
+    setView(v);
+    window.scrollTo(0, 0);
+  }
+  useEffect(() => {
+    try {
+      window.history.replaceState({ ...(window.history.state || {}), tfView: "dashboard" }, "");
+    } catch {
+      /* ignora */
+    }
+    const aoVoltar = (e) => {
+      setView(e.state?.tfView || "dashboard");
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener("popstate", aoVoltar);
+    return () => window.removeEventListener("popstate", aoVoltar);
+  }, []);
+
   function trocarModo(novoModo) {
+    setEscolhendoModo(false);
     if (novoModo === modo) return;
     setModo(novoModo);
-    setView("dashboard");
+    if (view !== "mais") setView("dashboard");
+    showToast(novoModo === "empresarial" ? "Espaço empresarial" : "Espaço pessoal");
+  }
+
+  async function sairComConfirmacao() {
+    const ok = await confirmar({
+      titulo: "Sair da conta?",
+      mensagem: "No próximo acesso vão ser pedidos o e-mail e a senha. Seus dados continuam guardados na nuvem.",
+      confirmar: "Sair",
+      perigo: true,
+    });
+    if (ok) sair();
   }
 
   /* ---- login / foto / sair ---- */
@@ -688,17 +779,12 @@ export default function App() {
     showToast("Backup exportado ✓");
   }
 
-  function stepMonth(delta) {
-    let mi = mesIdx + delta, y = ano;
-    if (mi < 0) { mi = 11; y -= 1; }
-    else if (mi > 11) { mi = 0; y += 1; }
-    if (!ANOS.includes(y)) return;
-    setMesIdx(mi);
+  function mudarMes(y, mi) {
     setAno(y);
+    setMesIdx(mi);
   }
 
-  const viewTitle = NAV.find((n) => n.id === view)?.label || "";
-  const usaMes = ["dashboard", "receitas", "despesas", "relatorios"].includes(view);
+  const usaMes = USA_MES.includes(view);
 
   // Saudação com o nome da pessoa logada; a marca do app é fixa
   const nomeApp = "Thayfinance";
@@ -754,17 +840,37 @@ export default function App() {
     );
   }
 
+  const aba = abaDe(view);
+  const dentroDeMais = DENTRO_DE_MAIS.includes(view);
+  const nomeEspaco = empresarial ? "Empresarial" : "Pessoal";
+
+  // indicador de salvamento (ícone discreto no topo)
+  const statusIcone =
+    status === "saving" ? (
+      <Loader2 size={18} className="animate-spin text-amber-600" />
+    ) : status === "error" ? (
+      <CloudOff size={18} className="text-red-600" />
+    ) : status === "saved" ? (
+      <Check size={18} className="text-emerald-600" />
+    ) : (
+      <Cloud size={18} className="text-slate-400" />
+    );
+  const statusTexto =
+    status === "saving" ? "Salvando…" : status === "error" ? "Sem conexão — guardado no aparelho" : status === "saved" ? "Tudo salvo" : "Pronto";
+
   const seletorModo = (
-    <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+    <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800" role="radiogroup" aria-label="Espaço">
       {[
         ["pessoal", "Pessoal", User],
         ["empresarial", "Empresarial", Briefcase],
       ].map(([v, r, Icon]) => (
         <button
           key={v}
+          role="radio"
+          aria-checked={modo === v}
           onClick={() => trocarModo(v)}
           className={
-            "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition " +
+            "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-semibold transition " +
             (modo === v
               ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300"
               : "text-slate-500 dark:text-slate-400")
@@ -776,28 +882,52 @@ export default function App() {
     </div>
   );
 
+  const ABAS = [
+    { id: "dashboard", label: "Início", icon: Home },
+    { id: "lancamentos", label: "Lançamentos", icon: ListOrdered },
+    { id: "+" },
+    { id: "contas", label: "Contas", icon: CalendarClock },
+    { id: "mais", label: "Mais", icon: LayoutGrid },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
-      {/* Sidebar — desktop */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:flex">
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:shadow"
+      >
+        Pular para o conteúdo
+      </a>
+
+      {/* Barra lateral — computador */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:flex">
         <div className="flex items-center gap-2.5 px-5 pb-3 pt-5">
           <img src={emblemaUrl} alt="" className="h-10 w-10 object-contain" />
-          <div>
-            <p className="text-base font-bold leading-tight text-slate-800 dark:text-slate-100">{saudacao}</p>
+          <div className="min-w-0">
+            <p className="truncate text-base font-bold leading-tight text-slate-800 dark:text-slate-100">{saudacao}</p>
             <p className="text-xs text-slate-500 dark:text-slate-400">Controle financeiro</p>
           </div>
         </div>
-        <div className="px-3 pb-2">{seletorModo}</div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3">
+        <div className="space-y-2 px-3 pb-3">
+          {seletorModo}
+          <button
+            onClick={() => abrirLancamento({ tipo: "despesa" })}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-semibold text-white transition hover:bg-emerald-700"
+          >
+            <Plus size={18} /> Novo lançamento
+          </button>
+        </div>
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3" aria-label="Menu lateral">
           {NAV.map((n) => (
             <button
               key={n.id}
-              onClick={() => setView(n.id)}
+              onClick={() => irPara(n.id)}
+              aria-current={view === n.id ? "page" : undefined}
               className={
-                "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition " +
+                "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition " +
                 (view === n.id
                   ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200")
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200")
               }
             >
               <n.icon size={17} />
@@ -816,205 +946,140 @@ export default function App() {
                 </div>
               )}
             </button>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{login?.nome}</p>
-              <button onClick={() => fotoTrocaRef.current?.click()} className="text-xs text-slate-500 dark:text-slate-400 underline-offset-2 hover:underline">
-                Trocar foto
-              </button>
-            </div>
+            <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700 dark:text-slate-200">{login?.nome}</p>
             <button
-              onClick={sair}
+              onClick={sairComConfirmacao}
               aria-label="Sair"
               title="Sair"
-              className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800 dark:hover:text-red-400"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-red-600 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-red-400"
             >
               <LogOut size={16} />
             </button>
           </div>
-          {bioDisponivel && (
+          <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={login?.bioCredId ? desativarBiometria : ativarBiometria}
-              className={
-                "flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition " +
-                (login?.bioCredId
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                  : "border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800")
-              }
+              onClick={exportData}
+              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
             >
-              <ScanFace size={16} /> {login?.bioCredId ? "Face ID / digital ativo" : "Ativar Face ID / digital"}
+              <Download size={14} /> Exportar
             </button>
-          )}
-          {userId && (
             <button
-              onClick={() => setMostrarTelegram(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"
+              onClick={() => fileRef.current?.click()}
+              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
             >
-              <Send size={16} /> Conectar Telegram
+              <Upload size={14} /> Importar
             </button>
-          )}
-          <button
-            onClick={exportData}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
-          >
-            <Download size={16} /> Exportar dados
-          </button>
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
-          >
-            <Upload size={16} /> Importar dados
-          </button>
-        </div>
-      </aside>
-
-      {/* Conteúdo */}
-      <div className="md:pl-60">
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
-          <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-2.5">
-            <div className="flex items-center gap-2 md:hidden">
-              <button onClick={() => fotoTrocaRef.current?.click()} aria-label="Trocar foto" className="transition hover:opacity-80">
-                {login?.foto ? (
-                  <img src={login.foto} alt="" className="h-7 w-7 rounded-full object-cover" />
-                ) : (
-                  <img src={emblemaUrl} alt="" className="h-7 w-7 object-contain" />
-                )}
-              </button>
-              <span className="text-sm font-bold">{saudacao}</span>
-            </div>
-
-            <div className="md:hidden">{seletorModo}</div>
-
-            {usaMes ? (
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => stepMonth(-1)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300" aria-label="Mês anterior">
-                  <ChevronLeft size={18} />
-                </button>
-                <select
-                  value={mesIdx}
-                  onChange={(e) => setMesIdx(Number(e.target.value))}
-                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  {MESES.map((mn, i) => (
-                    <option key={mn} value={i}>
-                      {mn}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={ano}
-                  onChange={(e) => setAno(Number(e.target.value))}
-                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  {ANOS.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-                <button onClick={() => stepMonth(1)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300" aria-label="Próximo mês">
-                  <ChevronRight size={18} />
-                </button>
-              </div>
-            ) : (
-              <div />
-            )}
-
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setEscuro((e) => !e)}
-                aria-label="Alternar modo claro/escuro"
-                className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-              >
-                {escuro ? <Sun size={18} /> : <Moon size={18} />}
-              </button>
-              <span
-                className={
-                  "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium " +
-                  (status === "saving"
-                    ? "bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400"
-                    : status === "error"
-                    ? "bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400"
-                    : status === "saved"
-                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
-                    : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500")
-                }
-              >
-                {status === "saving" ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" /> Salvando...
-                  </>
-                ) : status === "error" ? (
-                  <>
-                    <AlertTriangle size={13} /> Erro
-                  </>
-                ) : status === "saved" ? (
-                  <>
-                    <Check size={13} /> Salvo ✓
-                  </>
-                ) : (
-                  <>
-                    <Cloud size={13} /> Pronto
-                  </>
-                )}
-              </span>
+          </div>
+          {(bioDisponivel || userId) && (
+            <div className="grid grid-cols-2 gap-2">
               {bioDisponivel && (
                 <button
                   onClick={login?.bioCredId ? desativarBiometria : ativarBiometria}
                   className={
-                    "rounded-lg p-1.5 transition md:hidden " +
+                    "flex h-9 items-center justify-center gap-1.5 rounded-xl border text-xs font-medium transition " +
                     (login?.bioCredId
-                      ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
-                      : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300")
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                      : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800")
                   }
-                  aria-label={login?.bioCredId ? "Desativar Face ID" : "Ativar Face ID / digital"}
-                  title={login?.bioCredId ? "Face ID / digital ativo" : "Ativar Face ID / digital"}
                 >
-                  <ScanFace size={18} />
+                  <ScanFace size={14} /> {login?.bioCredId ? "Face ID ativo" : "Face ID"}
                 </button>
               )}
               {userId && (
-                <button onClick={() => setMostrarTelegram(true)} className="rounded-lg p-1.5 text-emerald-600 transition hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950 md:hidden" aria-label="Conectar Telegram" title="Conectar Telegram">
-                  <Send size={18} />
+                <button
+                  onClick={() => setMostrarTelegram(true)}
+                  className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
+                >
+                  <Send size={14} /> Telegram
                 </button>
               )}
-              <button onClick={exportData} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 md:hidden" aria-label="Exportar dados">
-                <Download size={18} />
-              </button>
-              <button onClick={() => fileRef.current?.click()} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 md:hidden" aria-label="Importar dados">
-                <Upload size={18} />
-              </button>
-              <button onClick={sair} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-800 dark:hover:text-red-400 md:hidden" aria-label="Sair">
-                <LogOut size={18} />
-              </button>
             </div>
+          )}
+        </div>
+      </aside>
+
+      {/* Conteúdo */}
+      <div className="md:pl-64">
+        <header className="safe-topo sticky top-0 z-20 border-b border-slate-200/80 bg-slate-50/90 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/85">
+          <div className="mx-auto flex h-16 max-w-5xl items-center gap-2 px-4">
+            {dentroDeMais && (
+              <button
+                onClick={() => (window.history.state?.tfView === view ? window.history.back() : irPara("mais"))}
+                className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-100 active:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800 md:hidden"
+                aria-label="Voltar"
+              >
+                <ChevronLeft size={22} />
+              </button>
+            )}
+            <div className="min-w-0 flex-1">
+              {view === "dashboard" ? (
+                <>
+                  <p className="truncate text-sm text-slate-500 dark:text-slate-400">{saudacao}</p>
+                  <button
+                    onClick={() => setEscolhendoModo(true)}
+                    className="-mx-1 -my-1.5 flex h-11 items-center gap-1 rounded-lg px-1 text-lg font-bold leading-none text-slate-800 dark:text-slate-100"
+                    aria-label={`Espaço ${nomeEspaco}. Tocar para trocar`}
+                  >
+                    {nomeEspaco} <ChevronDown size={18} className="text-slate-400" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h1 className="truncate text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{TITULOS[view]}</h1>
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">{nomeEspaco}</p>
+                </>
+              )}
+            </div>
+            {usaMes && <SeletorMes ano={ano} mesIdx={mesIdx} onMudar={mudarMes} />}
+            <span className="flex h-11 w-8 shrink-0 items-center justify-center" title={statusTexto} role="img" aria-label={statusTexto}>
+              {statusIcone}
+            </span>
+            <button
+              onClick={() => setEscuro((e) => !e)}
+              aria-label="Alternar tema claro/escuro"
+              className="hidden h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200 md:flex"
+            >
+              {escuro ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
           </div>
         </header>
 
-        <main className="mx-auto max-w-5xl px-4 pb-28 pt-5 md:pb-10">
-          <h1 className="mb-4 text-lg font-bold text-slate-800 dark:text-slate-100">
-            {viewTitle}
-            <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
-              {empresarial ? "Empresarial" : "Pessoal"}
-              {usaMes ? ` · ${MESES[mesIdx]} de ${ano}` : ""}
-            </span>
-          </h1>
-
+        <main id="conteudo" className="pb-barra mx-auto max-w-5xl px-4 pt-4">
           {!loaded ? (
-            <div className="flex items-center justify-center gap-2 py-20 text-slate-500 dark:text-slate-400">
-              <Loader2 size={18} className="animate-spin" /> Carregando seus dados...
+            <div className="space-y-4" aria-busy="true" aria-label="Carregando seus dados">
+              <div className="h-40 animate-pulse rounded-3xl bg-slate-200/70 dark:bg-slate-800" />
+              <div className="h-48 animate-pulse rounded-2xl bg-slate-200/70 dark:bg-slate-800" />
+              <div className="h-48 animate-pulse rounded-2xl bg-slate-200/70 dark:bg-slate-800" />
             </div>
           ) : (
             <>
               {view === "dashboard" && (
-                <PaginaDashboard espaco={espaco} ano={ano} mesIdx={mesIdx} escuro={escuro} irPara={setView} />
+                <PaginaInicio
+                  espaco={espaco}
+                  empresarial={empresarial}
+                  ano={ano}
+                  mesIdx={mesIdx}
+                  escuro={escuro}
+                  irPara={irPara}
+                  acoes={acoesTransacao}
+                  abrirLancamento={abrirLancamento}
+                />
               )}
-              {view === "receitas" && (
-                <PaginaTransacoes tipo="receita" espaco={espaco} empresarial={empresarial} ano={ano} mesIdx={mesIdx} acoes={acoesTransacao} showToast={showToast} />
+              {view === "lancamentos" && (
+                <PaginaLancamentos
+                  key={filtroLanc + modo}
+                  espaco={espaco}
+                  empresarial={empresarial}
+                  ano={ano}
+                  mesIdx={mesIdx}
+                  acoes={acoesTransacao}
+                  abrirLancamento={abrirLancamento}
+                  filtroInicial={filtroLanc}
+                />
               )}
-              {view === "despesas" && (
-                <PaginaTransacoes tipo="despesa" espaco={espaco} empresarial={empresarial} ano={ano} mesIdx={mesIdx} acoes={acoesTransacao} showToast={showToast} />
+              {view === "contas" && (
+                <PaginaContas espaco={espaco} empresarial={empresarial} acoes={acoesTransacao} abrirLancamento={abrirLancamento} />
               )}
-              {view === "contas" && <PaginaContas espaco={espaco} empresarial={empresarial} acoes={acoesTransacao} />}
               {view === "fluxo" && <PaginaFluxo espaco={espaco} />}
               {view === "metas" && <PaginaMetas espaco={espaco} atualizar={atualizarEspaco} />}
               {view === "categorias" && <PaginaCategorias espaco={espaco} atualizar={atualizarEspaco} avisar={showToast} />}
@@ -1047,13 +1112,19 @@ export default function App() {
                   atualizarLista={(fn) => atualizarEspaco((esp) => ({ ...esp, centrosCusto: fn(esp.centrosCusto) }))}
                   extraInfo={(c) => {
                     const total = soma(
-                      espaco.transacoes.filter(
-                        (t) => t.centroCustoId === c.id && t.tipo === "despesa" && t.status === "ok"
-                      )
+                      espaco.transacoes.filter((t) => t.centroCustoId === c.id && t.tipo === "despesa" && t.status === "ok")
                     );
                     return total > 0 ? `Total gasto: ${fmtBRL(total)}` : "Sem despesas vinculadas";
                   }}
                 />
+              )}
+              {["clientes", "fornecedores", "centros"].includes(view) && !empresarial && (
+                <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  Esta página é do espaço Empresarial.
+                  <button onClick={() => trocarModo("empresarial")} className="mx-auto mt-3 block h-11 rounded-xl bg-emerald-600 px-4 font-semibold text-white">
+                    Ir para o Empresarial
+                  </button>
+                </div>
               )}
               {view === "conta" && (
                 <PaginaConta
@@ -1062,9 +1133,30 @@ export default function App() {
                   userId={userId}
                   onConectarTelegram={() => setMostrarTelegram(true)}
                   onLimparDados={limparEspaco}
-                  onSair={sair}
+                  onSair={sairComConfirmacao}
                   showToast={showToast}
                   onVerTour={() => setMostrarTour(true)}
+                />
+              )}
+              {view === "mais" && (
+                <PaginaMais
+                  login={login}
+                  email={sessao?.user?.email}
+                  modo={modo}
+                  trocarModo={trocarModo}
+                  irPara={irPara}
+                  escuro={escuro}
+                  alternarTema={() => setEscuro((e) => !e)}
+                  bioDisponivel={bioDisponivel}
+                  bioAtivo={!!login?.bioCredId}
+                  alternarBiometria={login?.bioCredId ? desativarBiometria : ativarBiometria}
+                  onTelegram={() => setMostrarTelegram(true)}
+                  onExportar={exportData}
+                  onImportar={() => fileRef.current?.click()}
+                  onTrocarFoto={() => fotoTrocaRef.current?.click()}
+                  onSair={sairComConfirmacao}
+                  onVerTour={() => setMostrarTour(true)}
+                  userId={userId}
                 />
               )}
             </>
@@ -1072,24 +1164,91 @@ export default function App() {
         </main>
       </div>
 
-      {/* Navegação inferior — mobile (rolável) */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:hidden">
-        <div className="flex overflow-x-auto">
-          {NAV.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => setView(n.id)}
-              className={
-                "flex min-w-[72px] flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition " +
-                (view === n.id ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-500")
-              }
-            >
-              <n.icon size={19} />
-              <span className="truncate px-1">{n.label.split(" ")[0]}</span>
-            </button>
-          ))}
+      {/* Barra de baixo — celular: 4 destinos + botão de lançar */}
+      <nav
+        className="barra-inferior fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 md:hidden"
+        aria-label="Menu principal"
+      >
+        <div className="grid h-16 grid-cols-5 items-stretch">
+          {ABAS.map((a) =>
+            a.id === "+" ? (
+              <div key="+" className="flex items-center justify-center">
+                <button
+                  onClick={() => abrirLancamento({ tipo: "despesa" })}
+                  className="flex h-14 w-14 -translate-y-3 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-700 active:scale-95"
+                  aria-label="Novo lançamento"
+                >
+                  <Plus size={28} strokeWidth={2.5} />
+                </button>
+              </div>
+            ) : (
+              <button
+                key={a.id}
+                onClick={() => irPara(a.id)}
+                aria-current={aba === a.id ? "page" : undefined}
+                className={
+                  "flex flex-col items-center justify-center gap-1 text-xs font-semibold transition active:scale-95 " +
+                  (aba === a.id ? "text-emerald-700 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400")
+                }
+              >
+                <span className={"flex h-7 w-12 items-center justify-center rounded-full transition " + (aba === a.id ? "bg-emerald-100 dark:bg-emerald-950" : "")}>
+                  <a.icon size={20} strokeWidth={aba === a.id ? 2.4 : 2} />
+                </span>
+                {a.label}
+              </button>
+            )
+          )}
         </div>
       </nav>
+
+      {/* Lançamento (novo / editar / duplicar) */}
+      {lancamento && (
+        <FormTransacao
+          key={lancamento.chave}
+          tipo={lancamento.tipo}
+          inicial={lancamento.inicial || null}
+          statusPadrao={lancamento.statusPadrao || "ok"}
+          espaco={espaco}
+          empresarial={empresarial}
+          onSalvar={acoesTransacao.salvar}
+          onCriarCategoria={acoesTransacao.criarCategoria}
+          onFechar={() => setLancamento(null)}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Trocar de espaço (Pessoal / Empresarial) */}
+      {escolhendoModo && (
+        <Sheet titulo="Trocar de espaço" onFechar={() => setEscolhendoModo(false)}>
+          <div className="flex flex-col gap-2">
+            {[
+              ["pessoal", "Pessoal", User, "Casa e contas pessoais"],
+              ["empresarial", "Empresarial", Briefcase, "Negócio, clientes e fornecedores"],
+            ].map(([v, r, Icone, desc]) => (
+              <button
+                key={v}
+                onClick={() => trocarModo(v)}
+                aria-pressed={modo === v}
+                className={
+                  "flex min-h-16 items-center gap-3 rounded-2xl border px-4 text-left transition " +
+                  (modo === v
+                    ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500 dark:bg-emerald-950"
+                    : "border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800")
+                }
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm dark:bg-slate-800 dark:text-emerald-300">
+                  <Icone size={19} />
+                </span>
+                <span className="flex-1">
+                  <span className="block text-base font-semibold text-slate-800 dark:text-slate-100">{r}</span>
+                  <span className="block text-sm text-slate-500 dark:text-slate-400">{desc}</span>
+                </span>
+                {modo === v && <Check size={20} className="text-emerald-600" />}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
 
       {/* Input oculto para trocar a foto do perfil */}
       <input
@@ -1105,24 +1264,13 @@ export default function App() {
       />
 
       {/* Ajuste de enquadramento da foto de perfil */}
-      {arquivoFoto && (
-        <CropFotoModal
-          file={arquivoFoto}
-          onConfirmar={salvarFoto}
-          onFechar={() => setArquivoFoto(null)}
-        />
-      )}
+      {arquivoFoto && <CropFotoModal file={arquivoFoto} onConfirmar={salvarFoto} onFechar={() => setArquivoFoto(null)} />}
 
       {mostrarTelegram && userId && (
-        <ModalConectarTelegram
-          userId={userId}
-          nome={login?.nome}
-          showToast={showToast}
-          onFechar={() => setMostrarTelegram(false)}
-        />
+        <ModalConectarTelegram userId={userId} nome={login?.nome} showToast={showToast} onFechar={() => setMostrarTelegram(false)} />
       )}
 
-      {/* Tour de boas-vindas (1ª vez neste aparelho; revisível na aba Conta) */}
+      {/* Tour de boas-vindas (1ª vez neste aparelho; revisível em Mais → Dicas) */}
       {mostrarTour && !mostrarTelegram && (
         <TourBoasVindas
           onFechar={fecharTour}
@@ -1151,4 +1299,5 @@ export default function App() {
       <Toast toast={toast} onFechar={fecharToast} />
     </div>
   );
+
 }

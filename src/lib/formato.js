@@ -46,4 +46,35 @@ export const somaMeses = (iso, n) => {
   return `${ay}-${String(am + 1).padStart(2, "0")}-${String(ad).padStart(2, "0")}`;
 };
 
-export const soma = (ts) => ts.reduce((a, t) => a + (Number(t.valor) || 0), 0);
+// Soma em centavos inteiros: evita o erro de ponto flutuante (0,1 + 0,2 ≠ 0,3)
+// em somas longas. Os valores gravados continuam em reais com 2 casas.
+export const emCentavos = (v) => Math.round((Number(v) || 0) * 100);
+export const soma = (ts) => ts.reduce((a, t) => a + emCentavos(t.valor), 0) / 100;
+
+// Leitura do campo de valor do lançamento. Aceita "86,40", "1.234,56",
+// "1.234" (milhar), "12.5" e "R$ 50". Arredonda para centavos.
+// Devolve null se não for número, 0 se vazio.
+export function parseDinheiro(texto) {
+  let s = String(texto ?? "").replace(/[R$\s]/g, "");
+  if (s === "") return 0;
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+  if (!/^\d*\.?\d*$/.test(s) || s === ".") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+
+const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const MESES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+// "Hoje", "Ontem", "Amanhã" ou "qua, 23 set" (com o ano se for outro ano)
+export function rotuloDia(iso, hoje = hojeISO()) {
+  if (iso === hoje) return "Hoje";
+  if (iso === somaDias(hoje, -1)) return "Ontem";
+  if (iso === somaDias(hoje, 1)) return "Amanhã";
+  const d = new Date(iso + "T12:00:00");
+  const base = `${DIAS_SEMANA[d.getDay()]}, ${d.getDate()} ${MESES_ABREV[d.getMonth()]}`;
+  return iso.slice(0, 4) === hoje.slice(0, 4) ? base : `${base} ${iso.slice(0, 4)}`;
+}
+// dias de hoje até a data (negativo = já passou)
+export const diasAte = (iso, hoje = hojeISO()) =>
+  Math.round((new Date(iso + "T12:00:00") - new Date(hoje + "T12:00:00")) / 86400000);

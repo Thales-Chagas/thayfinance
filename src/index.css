@@ -28,7 +28,7 @@ body {
 /* No celular, campos com menos de 16px fazem o iPhone dar zoom sozinho ao
    tocar. 16px em telas pequenas; o desktop continua com o tamanho do layout. */
 @media (max-width: 639px) {
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.campo-grande),
   select,
   textarea {
     font-size: 16px !important;

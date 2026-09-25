@@ -21,8 +21,8 @@ export function Toast({ toast, onFechar }) {
             <button
               type="button"
               onClick={() => {
-                toast.acao.fn();
                 onFechar();
+                toast.acao.fn();
               }}
               className="ml-1 h-10 shrink-0 rounded-xl px-3 font-bold text-emerald-300 transition hover:bg-white/10 active:bg-white/20"
             >

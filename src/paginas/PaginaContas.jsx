@@ -4,11 +4,10 @@ import { fmtBRL, hojeISO, fmtData, somaDias, soma } from "../lib/formato";
 import { rotuloRecorrencia, totalParcelas } from "../lib/recorrencia";
 import { gradPorId, gradCat, cssGrad } from "../lib/cores";
 import { Card, SectionTitle, BotaoPrimario, BotaoLeve } from "../components/ui";
-import { FormTransacao } from "../components/FormTransacao";
 import { ModalExcluirConta, ModalDetalheConta } from "../components/ModaisConta";
 
-export function PaginaContas({ espaco, empresarial, acoes }) {
-  const [form, setForm] = useState(null); // null | {tipoNovo} | transacao p/ editar
+export function PaginaContas({ espaco, empresarial, acoes, abrirLancamento }) {
+  const setForm = (f) => (f.id ? abrirLancamento({ inicial: f }) : abrirLancamento({ tipo: f.tipoNovo, statusPadrao: "pendente" }));
   const [excluindo, setExcluindo] = useState(null); // transacao aguardando confirmação
   const [detalhe, setDetalhe] = useState(null); // transacao cujo popup de detalhes está aberto
   const [filtro, setFiltro] = useState("todas");
@@ -286,18 +285,6 @@ export function PaginaContas({ espaco, empresarial, acoes }) {
         <Bloco tipo="receita" titulo="Contas a receber" />
       </div>
 
-      {form !== null && (
-        <FormTransacao
-          tipo={form.tipoNovo || form.tipo}
-          inicial={form.id ? form : null}
-          espaco={espaco}
-          empresarial={empresarial}
-          statusPadrao="pendente"
-          onSalvar={acoes.salvar}
-          onCriarCategoria={acoes.criarCategoria}
-          onFechar={() => setForm(null)}
-        />
-      )}
 
       {excluindo && (
         <ModalExcluirConta

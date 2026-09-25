@@ -1,7 +1,6 @@
 import React, { useState, useRef } from "react";
 import { Loader2, Camera, Mic, Square } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { BotaoLeve } from "./ui";
 
 /* ============================================================
    CAPTURA POR IA (áudio + foto de comprovante)
@@ -44,7 +43,7 @@ export function blobParaBase64(blob) {
 
 // Dois botões: 🎙️ Áudio e 📷 Comprovante. Chamam a IA e devolvem o
 // lançamento pronto (via onResultado) pra pessoa conferir e salvar.
-export function CapturaIA({ onResultado, showToast }) {
+export function CapturaIA({ onResultado, showToast, compacto = false }) {
   const [estado, setEstado] = useState("idle"); // idle | gravando | processando
   const fotoRef = useRef(null);
   const recRef = useRef(null);
@@ -118,21 +117,39 @@ export function CapturaIA({ onResultado, showToast }) {
         onChange={aoEscolherFoto}
       />
       {ocupado ? (
-        <span className="flex items-center gap-1.5 rounded-lg border border-emerald-200 px-2.5 py-1.5 text-xs font-medium text-emerald-600 dark:border-emerald-800 dark:text-emerald-400">
-          <Loader2 size={14} className="animate-spin" /> lendo com IA…
+        <span
+          role="status"
+          className="flex h-11 items-center gap-1.5 rounded-xl border border-emerald-200 px-3 text-sm font-medium text-emerald-700 dark:border-emerald-800 dark:text-emerald-300"
+        >
+          <Loader2 size={16} className="animate-spin" /> {compacto ? "Lendo…" : "Lendo com IA…"}
         </span>
       ) : (
         <>
-          <BotaoLeve
+          <button
+            type="button"
             onClick={gravarAudio}
-            title="Lançar por áudio"
-            className={estado === "gravando" ? "!border-red-300 !bg-red-50 !text-red-600 dark:!bg-red-950" : ""}
+            aria-label={estado === "gravando" ? "Parar gravação" : "Lançar por áudio"}
+            title={estado === "gravando" ? "Parar gravação" : "Lançar por áudio"}
+            className={
+              "flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition active:scale-95 " +
+              (estado === "gravando"
+                ? "border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-300"
+                : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800")
+            }
           >
-            {estado === "gravando" ? <><Square size={14} /> Parar</> : <><Mic size={14} /> Áudio</>}
-          </BotaoLeve>
-          <BotaoLeve onClick={() => fotoRef.current?.click()} title="Ler comprovante">
-            <Camera size={14} /> Comprovante
-          </BotaoLeve>
+            {estado === "gravando" ? <Square size={16} /> : <Mic size={16} />}
+            {!compacto && (estado === "gravando" ? "Parar" : "Áudio")}
+          </button>
+          <button
+            type="button"
+            onClick={() => fotoRef.current?.click()}
+            aria-label="Ler foto do comprovante"
+            title="Ler foto do comprovante"
+            className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            <Camera size={16} />
+            {!compacto && "Comprovante"}
+          </button>
         </>
       )}
     </>
