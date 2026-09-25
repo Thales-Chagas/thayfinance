@@ -130,3 +130,30 @@ html.teclado-aberto .sheet-painel {
 .dark .recharts-tooltip-item {
   color: #e2e8f0 !important;
 }
+
+/* ---------- Telas de entrada (login, cadastro, PIN) ---------- */
+.auth-conteudo {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.anim-auth {
+  animation: aparece 220ms ease-out;
+}
+/* teclado aberto: some o título e o espaço de cima, o formulário sobe */
+html.teclado-aberto .auth-titulo,
+html.teclado-aberto .auth-espaco,
+html.teclado-aberto .auth-some-teclado {
+  display: none;
+}
+/* celular baixo ou deitado: topo compacto */
+@media (max-height: 620px) {
+  .auth-titulo {
+    margin-top: 1rem !important;
+  }
+  .auth-titulo h1 {
+    font-size: 1.5rem !important;
+  }
+  .auth-titulo p {
+    display: none;
+  }
+}
